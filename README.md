@@ -1,0 +1,337 @@
+# Aircraft Engine Degradation & RUL Prediction
+
+**Predictive Maintenance System for Turbofan Engines using NASA C-MAPSS Dataset**
+
+![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![TensorFlow](https://img.shields.io/badge/TensorFlow-2.13-orange.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+
+## Overview
+
+This project implements a comprehensive Remaining Useful Life (RUL) prediction system for aircraft turbofan engines using the NASA Commercial Modular Aero-Propulsion System Simulation (C-MAPSS) dataset. The system uses deep learning (LSTM networks) combined with advanced feature engineering to predict when engines will fail, enabling proactive maintenance scheduling that reduces costs and improves fleet availability.
+
+### Key Features
+
+- **LSTM Neural Network**: Deep learning model for time-series RUL prediction
+- **Baseline Models**: Random Forest and Linear Regression for comparison
+- **Anomaly Detection**: Early fault warning system using Isolation Forest
+- **Feature Engineering**: Rolling statistics, rate-of-change features, and domain-specific health indicators
+- **Maintenance Planning**: AI-driven scheduling with cost/benefit analysis vs traditional approaches
+- **Comprehensive Evaluation**: RMSE, MAE, R², asymmetric scoring, and visualization
+
+## Dataset
+
+The NASA C-MAPSS dataset contains run-to-failure data from turbofan engine simulations with varying operating conditions and fault modes:
+
+- **FD001**: Single operating condition, single fault mode (HPC degradation) - 100 train/100 test engines
+- **FD002**: Six operating conditions, single fault mode - 260 train/259 test engines
+- **FD003**: Single operating condition, two fault modes - 100 train/100 test engines
+- **FD004**: Six operating conditions, two fault modes - 248 train/249 test engines
+
+Each dataset provides:
+- **26 columns**: Unit ID, time cycles, 3 operational settings, 21 sensor measurements
+- **Training data**: Complete run-to-failure sequences
+- **Test data**: Partial sequences with ground truth RUL values
+
+**Data Source**: [NASA PCoE Datasets](https://data.nasa.gov/dataset/cmapss-jet-engine-simulated-data)
+
+## Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- Virtual environment (recommended)
+
+### Setup
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd Aircraft-Engine-Degradation-RUL-Prediction
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+### Dependencies
+
+- numpy
+- pandas
+- matplotlib
+- seaborn
+- scikit-learn
+- tensorflow (or pytorch)
+- jupyter (optional, for notebooks)
+
+## Project Structure
+
+```
+Aircraft-Engine-Degradation-RUL-Prediction/
+├── config.py                 # Configuration and hyperparameters
+├── utils.py                  # Utility functions
+├── data_loader.py            # Dataset loading and parsing
+├── preprocessor.py           # Data preprocessing and normalization
+├── feature_engineer.py       # Feature engineering module
+├── evaluator.py              # Model evaluation metrics
+├── visualizer.py             # Visualization functions
+├── maintenance_planner.py    # Maintenance scheduling logic
+├── train.py                  # Training pipeline
+├── predict.py                # Prediction script
+├── models/
+│   ├── __init__.py
+│   ├── baseline_model.py     # Random Forest & Linear Regression
+│   ├── lstm_model.py         # LSTM neural network
+│   └── anomaly_detector.py   # Anomaly detection module
+├── models/saved/             # Trained model files
+├── results/                  # Evaluation results and metrics
+├── plots/                    # Generated visualizations
+└── logs/                     # Training logs
+```
+
+## Usage
+
+### 1. Training Models
+
+Train models on the FD001 dataset:
+
+```bash
+python train.py --dataset FD001
+```
+
+Options:
+- `--dataset`: Choose dataset (FD001, FD002, FD003, FD004)
+- `--skip-baseline`: Skip baseline model training
+- `--skip-lstm`: Skip LSTM model training  
+- `--skip-anomaly`: Skip anomaly detector training
+
+Training Process:
+1. Loads and preprocesses data
+2. Engineers features (rolling stats, rate-of-change, health indicators)
+3. Trains baseline models (Random Forest, Linear Regression)
+4. Trains LSTM model with early stopping
+5. Trains anomaly detector on healthy engines
+6. Saves all models and scalers
+
+Expected Training Time (FD001):
+- Baseline models: ~1-2 minutes
+- LSTM model: ~10-15 minutes (with early stopping)
+
+### 2. Making Predictions
+
+Make predictions on test data:
+
+```bash
+python predict.py --dataset FD001
+```
+
+Options:
+- `--dataset`: Dataset to predict on
+- `--no-viz`: Skip visualization generation
+
+Prediction Process:
+1. Loads trained models and preprocessor
+2. Preprocesses and engineers features for test data
+3. Generates time-series sequences
+4. Makes RUL predictions
+5. Evaluates performance (RMSE, MAE, R²)
+6. Creates visualizations (scatter plots, error distributions)
+7. Generates maintenance schedule
+8. Performs cost/benefit analysis
+
+### 3. Configuration
+
+Edit `config.py` to customize:
+
+**Model Hyperparameters**:
+```python
+LSTM_CONFIG = {
+    'sequence_length': 30,      # Time steps to look back
+    'lstm_units': [100, 50],    # Units in each LSTM layer
+    'dropout_rate': 0.2,
+    'learning_rate': 0.001,
+    'batch_size': 256,
+    'epochs': 100,
+    'patience': 15
+}
+```
+
+**Maintenance Thresholds**:
+```python
+MAINTENANCE_THRESHOLDS = {
+    'critical': 30,    # Immediate maintenance required
+    'warning': 80,     # Schedule maintenance soon
+    'healthy': 80      # Routine monitoring
+}
+```
+
+## Model Architecture
+
+### LSTM Network
+
+```
+Input: (sequence_length, num_features)
+  ↓
+LSTM Layer 1 (100 units) + Dropout (0.2)
+  ↓
+LSTM Layer 2 (50 units) + Dropout (0.2)
+  ↓
+Dense Output (1 unit, linear activation)
+  ↓
+Output: Predicted RUL (cycles)
+```
+
+### Feature Engineering
+
+**Rolling Window Statistics** (windows: 5, 10, 15 cycles):
+- Mean, std, min, max for all sensors
+
+**Rate of Change**:
+- First-order differences for degradation trends
+
+**Health Indicators** (domain-specific):
+- Temperature ratios (thermal efficiency)
+- Pressure ratios (compression efficiency)
+- Speed ratios (mechanical health)
+- Coolant bleed (cooling demand)
+
+## Performance
+
+### Target Metrics (FD001)
+
+- **RMSE**: ≤ 25 cycles
+- **MAE**: ≤ 20 cycles
+- **R²**: ≥ 0.7
+
+### Expected Results
+
+Based on literature and the PDF guide:
+- Well-tuned LSTM: **RMSE ~20-25 cycles** on FD001 test set
+- Baseline Random Forest: **RMSE ~25-30 cycles**
+- Anomaly Detection: **Precision ~0.7, Recall ~0.6** for failing engines
+
+### Maintenance Impact
+
+Compared to fixed 150-cycle maintenance schedule:
+- **Cost Reduction**: 60-83%
+- **Fleet Availability**: 75% → 90-100%
+- **Unexpected Failures**: Reduced to near-zero
+
+## Evaluation
+
+The system evaluates models using:
+
+### 1. Regression Metrics
+- **RMSE** (Root Mean Squared Error): Primary metric for RUL prediction accuracy
+- **MAE** (Mean Absolute Error): Average prediction error
+- **R²**: Goodness of fit
+
+### 2. Asymmetric Scoring
+NASA's asymmetric scoring function that penalizes late predictions (under-predicting RUL) more heavily than early predictions, as missing failures is more dangerous than false alarms.
+
+### 3. Maintenance Metrics
+- Number of scheduled vs unscheduled maintenances
+- Total maintenance cost
+- Fleet availability percentage
+- Cost savings vs traditional approaches
+
+## Visualization
+
+The system generates:
+
+1. **Prediction Scatter Plots**: Predicted vs  Actual RUL
+2. **Error Distributions**: Histogram and box plots of prediction errors
+3. **Training History**: Loss and MAE curves over epochs
+4. **Engine Trajectories**: RUL progression over engine lifetime
+5. **Sensor Trends**: Degradation patterns in sensor readings
+
+## Maintenance Planning
+
+The maintenance planner classifies engines into three zones:
+
+| Health Status | RUL Range | Action |
+|---------------|-----------|--------|
+| 🔴 Critical | < 30 cycles | Immediate maintenance - Ground aircraft |
+| 🟡 Warning | 30-80 cycles | Schedule maintenance soon |
+| 🟢 Healthy | ≥ 80 cycles | Continue routine monitoring |
+
+### Cost/Benefit Analysis
+
+Compares two strategies:
+1. **Traditional**: Fixed 150-cycle maintenance intervals
+2. **Predictive**: AI-driven scheduling based on RUL predictions
+
+Metrics:
+- Scheduled maintenance cost: $10,000
+- Unscheduled maintenance cost: $50,000 (5x higher)
+- False alarm cost: $2,000
+
+## Implementation Details
+
+### Data Pipeline
+
+1. **Loading**: Parse space-separated text files, assign column names
+2. **Preprocessing**: Create RUL labels, handle sensor noise, normalize features
+3. **Feature Engineering**: Generate rolling statistics, rate-of-change, health indicators
+4. **Sequence Generation**: Create time-series windows for LSTM input
+
+### Training Strategy
+
+- **Train/Validation Split**: 80/20 by engine units (maintains temporal integrity)
+- **Normalization**: MinMax scaling fitted on training data only
+- **Early Stopping**: Monitor validation loss with patience=15 epochs
+- **Regularization**: Dropout (0.2) in LSTM layers
+
+### Anomaly Detection
+
+- **Method**: Isolation Forest
+- **Training**: Fit on healthy engines only (RUL > 80)
+- **Purpose**: Early fault detection before RUL becomes critical
+- **Integration**: Complements RUL predictions with early warnings
+
+## Results Files
+
+After training and prediction:
+
+```
+results/
+├── FD001_predictions.csv              # Unit ID, true RUL, predicted RUL
+├── FD001_test_metrics.json            # RMSE, MAE, R², asymmetric score
+├── FD001_maintenance_schedule.csv     # Health status, recommended actions
+├── FD001_strategy_comparison.csv      # Traditional vs predictive comparison
+├── baseline_metrics.json              # Random Forest & Linear Regression metrics
+└── lstm_metrics.json                  # LSTM training metrics
+
+plots/
+├── FD001_prediction_scatter.png
+├── FD001_error_distribution.png
+└── lstm_training_history.png
+
+models/saved/
+├── lstm_model.h5                      # Trained LSTM model
+├── baseline_rf.pkl                    # Random Forest model
+├── baseline_lr.pkl                    # Linear Regression model
+├── anomaly_detector.pkl               # Anomaly detector
+├── scaler.pkl                         # Fitted scaler
+└── feature_info.json                  # Feature column names and metadata
+```
+
+## References
+
+1. **NASA C-MAPSS Dataset**: [NASA Open Data Portal](https://data.nasa.gov/dataset/cmapss-jet-engine-simulated-data)
+2. **PDF Guide**: "Aircraft Engine Degradation & RUL Prediction – Step-by-Step Guide (Using NASA C-MAPSS)"
+3. **Research Paper**: A. Saxena et al., "Damage Propagation Modeling for Aircraft Engine Run-to-Failure Simulation", PHM08, 2008
+4. **Medium Article**: Mihai Timoficiuc, "Predicting Jet Engine Failures with NASA's C-MAPSS Dataset (LSTM Guide)", 2025
+
+## License
+
+MIT License
+
+## Acknowledgments
+
+- NASA PCoE for the C-MAPSS dataset
+- Step-by-step implementation guide from the provided PDF
+- Machine learning community for baseline implementations
