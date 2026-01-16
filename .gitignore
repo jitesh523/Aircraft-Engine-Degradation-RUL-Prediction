@@ -39,3 +39,10 @@ logs/*.log
 # Data
 CMAPSSData/
 *.zip
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+tests/__pycache__/
