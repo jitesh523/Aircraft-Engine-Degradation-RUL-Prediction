@@ -209,6 +209,47 @@ AB_TESTING_CONFIG = {
     'auto_promote_threshold': 0.10  # Promote if >10% improvement
 }
 
+# ==================== Phase 2: Streaming & Edge Deployment ====================
+# Redis Streaming Configuration
+REDIS_CONFIG = {
+    'host': 'localhost',
+    'port': 6379,
+    'db': 0,
+    'input_stream': 'engine:sensors',
+    'output_stream': 'predictions:rul',
+    'consumer_group': 'rul_processors',
+    'max_stream_length': 100000
+}
+
+# Stream Processing Configuration
+STREAM_PROCESSING_CONFIG = {
+    'batch_size': 10,
+    'block_time_ms': 1000,
+    'window_size': 15,  # For rolling features
+    'processing_delay_ms': 10
+}
+
+# Model Quantization Configuration
+QUANTIZATION_CONFIG = {
+    'default_type': 'dynamic',  # 'dynamic', 'float16', 'int8'
+    'int8_representative_samples': 1000,
+    'target_size_reduction_percent': 75.0
+}
+
+# ONNX Export Configuration
+ONNX_CONFIG = {
+    'opset_version': 13,
+    'optimize': True,
+    'model_types': ['tensorflow', 'sklearn']
+}
+
+# Edge Deployment Configuration
+EDGE_DEPLOYMENT_CONFIG = {
+    'default_model_type': 'tflite',  # 'tflite' or 'onnx'
+    'batch_size': 32,
+    'target_devices': ['raspberry_pi', 'jetson_nano', 'mobile']
+}
+
 # ==================== Maintenance Planning ====================
 # RUL Thresholds for maintenance zones
 MAINTENANCE_THRESHOLDS = {
