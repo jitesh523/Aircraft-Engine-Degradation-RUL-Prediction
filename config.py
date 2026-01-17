@@ -133,6 +133,82 @@ ANOMALY_CONFIG = {
     'random_state': RANDOM_SEED
 }
 
+# ==================== Phase 1: Advanced Ensemble Methods ====================
+# XGBoost Configuration
+XGBOOST_CONFIG = {
+    'objective': 'reg:squarederror',
+    'n_estimators': 500,
+    'max_depth': 7,
+    'learning_rate': 0.05,
+    'subsample': 0.8,
+    'colsample_bytree': 0.8,
+    'min_child_weight': 3,
+    'gamma': 0.1,
+    'reg_alpha': 0.1,
+    'reg_lambda': 1.0,
+    'random_state': RANDOM_SEED
+}
+
+# LightGBM Configuration
+LIGHTGBM_CONFIG = {
+    'objective': 'regression',
+    'boosting_type': 'gbdt',
+    'n_estimators': 500,
+    'num_leaves': 63,
+    'max_depth': 8,
+    'learning_rate': 0.05,
+    'feature_fraction': 0.8,
+    'bagging_fraction': 0.8,
+    'bagging_freq': 5,
+    'min_child_samples': 20,
+    'reg_alpha': 0.1,
+    'reg_lambda': 1.0,
+    'random_state': RANDOM_SEED
+}
+
+# CatBoost Configuration
+CATBOOST_CONFIG = {
+    'loss_function': 'RMSE',
+    'iterations': 500,
+    'depth': 7,
+    'learning_rate': 0.05,
+    'l2_leaf_reg': 3.0,
+    'random_seed': RANDOM_SEED,
+    'verbose': False
+}
+
+# Stacking Ensemble Configuration
+STACKING_CONFIG = {
+    'n_folds': 5,
+    'meta_learner': 'ridge',  # 'ridge' or 'mlp'
+    'meta_learner_params': {
+        'ridge': {'alpha': 10.0},
+        'mlp': {
+            'hidden_layer_sizes': (50, 25),
+            'activation': 'relu',
+            'max_iter': 1000,
+            'random_state': RANDOM_SEED
+        }
+    }
+}
+
+# MLflow Configuration
+MLFLOW_CONFIG = {
+    'tracking_uri': 'file:./mlruns',  # or http://localhost:5000
+    'experiment_name': 'RUL_Prediction',
+    'artifact_location': None,
+    'register_models': True
+}
+
+# A/B Testing Configuration
+AB_TESTING_CONFIG = {
+    'significance_level': 0.05,
+    'statistical_power': 0.8,
+    'min_sample_size': 100,
+    'bootstrap_iterations': 1000,
+    'auto_promote_threshold': 0.10  # Promote if >10% improvement
+}
+
 # ==================== Maintenance Planning ====================
 # RUL Thresholds for maintenance zones
 MAINTENANCE_THRESHOLDS = {

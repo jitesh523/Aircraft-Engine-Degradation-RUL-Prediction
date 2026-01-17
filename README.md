@@ -12,11 +12,19 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 
 ### Key Features
 
+#### Core Models
 - **LSTM Neural Network**: Deep learning model for time-series RUL prediction
+- **Gradient Boosting Models**: XGBoost, LightGBM, and CatBoost for enhanced accuracy
+- **Stacking Ensemble**: Meta-learning approach combining multiple base models
 - **Baseline Models**: Random Forest and Linear Regression for comparison
 - **Anomaly Detection**: Early fault warning system using Isolation Forest
+
+#### Advanced Features (Phase 1)
+- **MLflow Integration**: Comprehensive experiment tracking and model versioning
+- **A/B Testing Framework**: Statistical comparison and champion/challenger deployment
+- **Model Registry**: Production-ready model management and versioning
 - **Feature Engineering**: Rolling statistics, rate-of-change features, and domain-specific health indicators
-- **Maintenance Planning**: AI-driven scheduling with cost/benefit analysis vs traditional approaches
+- **Maintenance Planning**: AI-driven scheduling with cost/benefit analysis
 - **Comprehensive Evaluation**: RMSE, MAE, R², asymmetric scoring, and visualization
 
 ## Dataset
@@ -142,7 +150,25 @@ Prediction Process:
 7. Generates maintenance schedule
 8. Performs cost/benefit analysis
 
-### 3. Configuration
+### 3. Phase 1: Advanced Ensemble Methods
+
+Train gradient boosting models and stacking ensemble with MLflow tracking:
+
+```bash
+# Train all Phase 1 models (XGBoost, LightGBM, CatBoost, Stacking Ensemble)
+python train_phase1.py --dataset FD001
+
+# Train without MLflow tracking
+python train_phase1.py --dataset FD001 --no-mlflow
+
+# View MLflow results
+mlflow ui --port 5000
+# Open http://localhost:5000 in browser
+```
+
+See [MLFLOW_GUIDE.md](MLFLOW_GUIDE.md) for detailed MLflow usage.
+
+### 4. Configuration
 
 Edit `config.py` to customize:
 
@@ -208,10 +234,16 @@ Output: Predicted RUL (cycles)
 
 ### Expected Results
 
-Based on literature and the PDF guide:
-- Well-tuned LSTM: **RMSE ~20-25 cycles** on FD001 test set
+#### Baseline Performance
 - Baseline Random Forest: **RMSE ~25-30 cycles**
+- Well-tuned LSTM: **RMSE ~20-25 cycles** on FD001 test set
 - Anomaly Detection: **Precision ~0.7, Recall ~0.6** for failing engines
+
+#### Phase 1: Advanced Ensemble Methods
+- XGBoost: **RMSE ~18-22 cycles**
+- LightGBM: **RMSE ~18-22 cycles**
+- CatBoost: **RMSE ~18-22 cycles**
+- Stacking Ensemble: **RMSE ~15-18 cycles, R² ~0.80-0.85**
 
 ### Maintenance Impact
 
