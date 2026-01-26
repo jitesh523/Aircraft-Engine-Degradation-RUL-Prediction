@@ -22,7 +22,9 @@ from feature_engineer import FeatureEngineer
 from models.lstm_model import LSTMModel
 from models.baseline_model import BaselineModel
 from ensemble_predictor import EnsemblePredictor
+from ensemble_predictor import EnsemblePredictor
 from maintenance_planner import MaintenancePlanner
+from uncertainty_quantifier import UncertaintyQuantifier
 
 logger = setup_logging(__name__)
 
@@ -40,7 +42,9 @@ models = {}
 preprocessor = None
 feature_engineer = None
 ensemble = None
+ensemble = None
 planner = None
+uncertainty_quantifier = None
 
 
 class SensorData(BaseModel):
@@ -110,7 +114,7 @@ class HealthStatus(BaseModel):
 @app.on_event("startup")
 async def load_models():
     """Load trained models on startup"""
-    global models, preprocessor, feature_engineer, ensemble, planner
+    global models, preprocessor, feature_engineer, ensemble, planner, uncertainty_quantifier
     
     logger.info("Loading models...")
     
@@ -149,6 +153,9 @@ async def load_models():
         
         # Initialize maintenance planner
         planner = MaintenancePlanner()
+
+        # Initialize uncertainty quantifier
+        uncertainty_quantifier = UncertaintyQuantifier(n_iterations=50) # Use 50 for faster inference
         
         models = {
             'lstm': lstm_model,
@@ -283,8 +290,33 @@ async def predict_rul(request: PredictionRequest):
             predictions.append(RULPrediction(
                 unit_id=engine_data.unit_id,
                 predicted_rul=float(final_pred),
-                uncertainty_lower=None,  # Would need MC Dropout for uncertainty
-                uncertainty_upper=None,
+                confidence = 'Low'
+            
+            # Calculate uncertainty estimates if using LSTM
+            uncertainty_lower = None
+            uncertainty_upper = None
+            
+            if not request.use_ensemble and models['lstm']:
+                # Reshape for uncertainty quantifier
+                # Note: This increases latency due to multiple forward passes
+                try:
+                    # We reuse the previously prepared X_seq
+                    # For a real production system, you might want to make this optional via flag
+                    _, lower, upper = uncertainty_quantifier.predict_with_uncertainty(
+                        models['lstm'], 
+                        X_seq, 
+                        is_keras=True
+                    )
+                    uncertainty_lower = float(lower[0])
+                    uncertainty_upper = float(upper[0])
+                except Exception as e:
+                    logger.warning(f"Uncertainty quantification failed: {e}")
+
+            predictions.append(RULPrediction(
+                unit_id=engine_data.unit_id,
+                predicted_rul=float(final_pred),
+                uncertainty_lower=uncertainty_lower,
+                uncertainty_upper=uncertainty_upper,
                 health_status=health_status,
                 recommended_action=action,
                 confidence=confidence

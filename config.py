@@ -113,6 +113,21 @@ LSTM_CONFIG = {
     'validation_split': 0.2     # Validation split during training
 }
 
+# Transformer Model Hyperparameters
+TRANSFORMER_CONFIG = {
+    'head_size': 256,
+    'num_heads': 4,
+    'ff_dim': 4,
+    'num_transformer_blocks': 4,
+    'mlp_units': [128],
+    'dropout_rate': 0.4,
+    'mlp_dropout': 0.4,
+    'learning_rate': 0.001,
+    'batch_size': 64,
+    'epochs': 100,
+    'patience': 20
+}
+
 # Baseline Model Configuration
 BASELINE_CONFIG = {
     'random_forest': {
