@@ -22,7 +22,7 @@ from feature_engineer import FeatureEngineer
 from models.lstm_model import LSTMModel
 from models.baseline_model import BaselineModel
 from ensemble_predictor import EnsemblePredictor
-from ensemble_predictor import EnsemblePredictor
+
 from maintenance_planner import MaintenancePlanner
 from uncertainty_quantifier import UncertaintyQuantifier
 
@@ -285,11 +285,6 @@ async def predict_rul(request: PredictionRequest):
             elif pred_std < 20:
                 confidence = 'Medium'
             else:
-                confidence = 'Low'
-            
-            predictions.append(RULPrediction(
-                unit_id=engine_data.unit_id,
-                predicted_rul=float(final_pred),
                 confidence = 'Low'
             
             # Calculate uncertainty estimates if using LSTM
