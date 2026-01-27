@@ -204,6 +204,19 @@ class FeatureEngineer:
         logger.info(f"Top 5 features: {selected_features[:5]}")
         
         return selected_features
+    
+    # Backward compatible method aliases
+    def create_rolling_features(self, df, columns, window_sizes, stats):
+        """Alias for add_rolling_features"""
+        return self.add_rolling_features(df, columns, window_sizes, stats)
+    
+    def create_rate_of_change_features(self, df, columns, periods=1):
+        """Alias for add_rate_of_change_features"""
+        return self.add_rate_of_change_features(df, columns, periods)
+    
+    def create_health_indicators(self, df):
+        """Alias for add_health_indicators"""
+        return self.add_health_indicators(df)
 
 
 def engineer_features(train_df: pd.DataFrame, 

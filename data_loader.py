@@ -183,6 +183,10 @@ def load_dataset(dataset_name: str = 'FD001') -> Tuple[pd.DataFrame, pd.DataFram
     return loader.load_all_data()
 
 
+# Backward compatible alias
+DataLoader = CMAPSSDataLoader
+
+
 if __name__ == "__main__":
     # Test the data loader
     print("="*60)

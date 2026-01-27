@@ -285,6 +285,10 @@ def preprocess_data(train_df: pd.DataFrame,
     }
 
 
+# Backward compatible alias
+Preprocessor = CMAPSSPreprocessor
+
+
 if __name__ == "__main__":
     # Test the preprocessor
     from data_loader import load_dataset
