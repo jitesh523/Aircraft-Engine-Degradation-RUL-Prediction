@@ -2,9 +2,12 @@
 
 **Predictive Maintenance System for Turbofan Engines using NASA C-MAPSS Dataset**
 
-![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![Python](https://img.shields.io/badge/Python-3.9+-blue.svg)
 ![TensorFlow](https://img.shields.io/badge/TensorFlow-2.13-orange.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
+![CI/CD](https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction/workflows/CI%2FCD%20Pipeline/badge.svg)
+![Security](https://img.shields.io/badge/Security-Bandit%20%7C%20CodeQL-brightgreen.svg)
+![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)
 
 ## Overview
 
