@@ -219,6 +219,215 @@ class FeatureEngineer:
         return self.add_health_indicators(df)
 
 
+class TimeSeriesAugmenter:
+    """
+    Data augmentation techniques for time-series sensor data
+    Improves model robustness by creating synthetic training samples
+    """
+    
+    def __init__(self, random_seed: int = None):
+        """
+        Initialize augmenter
+        
+        Args:
+            random_seed: Random seed for reproducibility
+        """
+        self.random_state = np.random.RandomState(random_seed)
+        logger.info("Initialized TimeSeriesAugmenter")
+    
+    def jitter(self, 
+               df: pd.DataFrame, 
+               columns: List[str], 
+               sigma: float = 0.03) -> pd.DataFrame:
+        """
+        Add Gaussian noise to sensor values
+        
+        Simulates sensor measurement noise and variations
+        
+        Args:
+            df: DataFrame with sensor data
+            columns: Columns to apply jittering
+            sigma: Standard deviation of noise (as fraction of column std)
+            
+        Returns:
+            Augmented DataFrame
+        """
+        df_aug = df.copy()
+        
+        for col in columns:
+            if col in df_aug.columns:
+                col_std = df_aug[col].std()
+                noise = self.random_state.normal(0, sigma * col_std, size=len(df_aug))
+                df_aug[col] = df_aug[col] + noise
+        
+        return df_aug
+    
+    def scaling(self,
+                df: pd.DataFrame,
+                columns: List[str],
+                sigma: float = 0.1) -> pd.DataFrame:
+        """
+        Apply random scaling to sensor values
+        
+        Simulates calibration differences and unit-to-unit variations
+        
+        Args:
+            df: DataFrame with sensor data
+            columns: Columns to apply scaling
+            sigma: Standard deviation of scaling factor
+            
+        Returns:
+            Augmented DataFrame
+        """
+        df_aug = df.copy()
+        
+        for col in columns:
+            if col in df_aug.columns:
+                scale_factor = self.random_state.normal(1.0, sigma)
+                df_aug[col] = df_aug[col] * scale_factor
+        
+        return df_aug
+    
+    def window_slice(self,
+                     df: pd.DataFrame,
+                     slice_ratio: float = 0.9) -> pd.DataFrame:
+        """
+        Randomly slice a portion of time series per engine
+        
+        Creates variation in degradation trajectory length
+        
+        Args:
+            df: DataFrame with unit_id column
+            slice_ratio: Ratio of sequence to keep (0.8-1.0)
+            
+        Returns:
+            Augmented DataFrame with sliced sequences
+        """
+        df_aug = []
+        
+        for unit_id in df['unit_id'].unique():
+            unit_data = df[df['unit_id'] == unit_id].copy()
+            n_samples = len(unit_data)
+            
+            # Calculate slice size
+            slice_size = int(n_samples * slice_ratio)
+            if slice_size < 10:  # Minimum sequence length
+                df_aug.append(unit_data)
+                continue
+            
+            # Random start point (keeping end intact for RUL consistency)
+            max_start = n_samples - slice_size
+            start_idx = self.random_state.randint(0, max_start + 1)
+            
+            sliced_data = unit_data.iloc[start_idx:start_idx + slice_size].copy()
+            
+            # Update time_cycles if present
+            if 'time_cycles' in sliced_data.columns:
+                sliced_data['time_cycles'] = range(1, len(sliced_data) + 1)
+            
+            df_aug.append(sliced_data)
+        
+        return pd.concat(df_aug, ignore_index=True)
+    
+    def degradation_interpolation(self,
+                                  df: pd.DataFrame,
+                                  columns: List[str],
+                                  n_new_engines: int = 10) -> pd.DataFrame:
+        """
+        Create synthetic engines by interpolating between existing degradation paths
+        
+        Generates new training samples by blending similar engines
+        
+        Args:
+            df: DataFrame with unit_id and sensor data
+            columns: Sensor columns to interpolate
+            n_new_engines: Number of synthetic engines to create
+            
+        Returns:
+            DataFrame with original + synthetic engines
+        """
+        df_aug = [df.copy()]
+        
+        unique_units = df['unit_id'].unique()
+        max_unit_id = df['unit_id'].max()
+        
+        for i in range(n_new_engines):
+            # Randomly select two engines to blend
+            unit1, unit2 = self.random_state.choice(unique_units, size=2, replace=False)
+            
+            engine1 = df[df['unit_id'] == unit1].copy()
+            engine2 = df[df['unit_id'] == unit2].copy()
+            
+            # Use the shorter sequence length
+            min_len = min(len(engine1), len(engine2))
+            engine1 = engine1.tail(min_len).reset_index(drop=True)
+            engine2 = engine2.tail(min_len).reset_index(drop=True)
+            
+            # Random blend ratio
+            alpha = self.random_state.uniform(0.3, 0.7)
+            
+            # Create synthetic engine
+            synthetic = engine1.copy()
+            synthetic['unit_id'] = max_unit_id + i + 1
+            
+            for col in columns:
+                if col in synthetic.columns:
+                    synthetic[col] = alpha * engine1[col].values + (1 - alpha) * engine2[col].values
+            
+            # Interpolate RUL if present
+            if 'RUL' in synthetic.columns:
+                synthetic['RUL'] = alpha * engine1['RUL'].values + (1 - alpha) * engine2['RUL'].values
+            
+            df_aug.append(synthetic)
+        
+        logger.info(f"Created {n_new_engines} synthetic engines via interpolation")
+        return pd.concat(df_aug, ignore_index=True)
+    
+    def augment_dataset(self,
+                        df: pd.DataFrame,
+                        methods: List[str] = None,
+                        n_augmentations: int = 1) -> pd.DataFrame:
+        """
+        Apply multiple augmentation methods to create expanded dataset
+        
+        Args:
+            df: Original DataFrame
+            methods: List of methods to apply ('jitter', 'scaling', 'slice', 'interpolation')
+            n_augmentations: Number of augmented copies to create
+            
+        Returns:
+            Augmented DataFrame (original + augmented samples)
+        """
+        if methods is None:
+            methods = ['jitter', 'scaling']
+        
+        sensor_cols = [col for col in df.columns if col.startswith('sensor_')]
+        
+        all_data = [df.copy()]
+        max_unit_id = df['unit_id'].max()
+        
+        for aug_idx in range(n_augmentations):
+            df_aug = df.copy()
+            
+            # Update unit IDs to avoid duplicates
+            df_aug['unit_id'] = df_aug['unit_id'] + max_unit_id * (aug_idx + 1)
+            
+            for method in methods:
+                if method == 'jitter':
+                    df_aug = self.jitter(df_aug, sensor_cols)
+                elif method == 'scaling':
+                    df_aug = self.scaling(df_aug, sensor_cols)
+                elif method == 'slice':
+                    df_aug = self.window_slice(df_aug, slice_ratio=0.9)
+            
+            all_data.append(df_aug)
+        
+        result = pd.concat(all_data, ignore_index=True)
+        logger.info(f"Augmentation complete. Original: {len(df)}, Augmented: {len(result)}")
+        
+        return result
+
+
 def engineer_features(train_df: pd.DataFrame, 
                      test_df: pd.DataFrame = None) -> Dict:
     """

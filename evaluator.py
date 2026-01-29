@@ -6,7 +6,8 @@ Evaluates models and generates performance metrics
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from typing import Dict, Tuple
+from sklearn.model_selection import TimeSeriesSplit
+from typing import Dict, Tuple, List, Callable
 import config
 from utils import setup_logging, asymmetric_score
 
@@ -162,6 +163,185 @@ class RULEvaluator:
         logger.info(f"Computed errors for {len(engine_errors)} engines")
         
         return engine_errors
+    
+    def cross_validate_time_series(self,
+                                   X: np.ndarray,
+                                   y: np.ndarray,
+                                   model_factory: Callable,
+                                   n_splits: int = 5) -> Dict:
+        """
+        Perform time-series aware cross-validation
+        
+        Uses TimeSeriesSplit to respect temporal ordering and prevent data leakage.
+        
+        Args:
+            X: Feature matrix
+            y: Target values
+            model_factory: Function that returns a fresh model instance
+            n_splits: Number of cross-validation folds
+            
+        Returns:
+            Dictionary with cross-validation results and confidence intervals
+        """
+        logger.info(f"Performing time-series cross-validation with {n_splits} folds...")
+        
+        tscv = TimeSeriesSplit(n_splits=n_splits)
+        fold_metrics = []
+        
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+            X_train, X_val = X[train_idx], X[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+            
+            # Get fresh model and train
+            model = model_factory()
+            model.fit(X_train, y_train)
+            
+            # Predict and evaluate
+            y_pred = model.predict(X_val)
+            
+            rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+            mae = mean_absolute_error(y_val, y_pred)
+            r2 = r2_score(y_val, y_pred)
+            
+            fold_metrics.append({
+                'fold': fold + 1,
+                'rmse': rmse,
+                'mae': mae,
+                'r2': r2,
+                'n_train': len(train_idx),
+                'n_val': len(val_idx)
+            })
+            
+            logger.info(f"  Fold {fold + 1}: RMSE={rmse:.2f}, MAE={mae:.2f}, R²={r2:.4f}")
+        
+        # Calculate statistics with confidence intervals
+        rmse_values = [m['rmse'] for m in fold_metrics]
+        mae_values = [m['mae'] for m in fold_metrics]
+        r2_values = [m['r2'] for m in fold_metrics]
+        
+        cv_results = {
+            'n_folds': n_splits,
+            'fold_metrics': fold_metrics,
+            'rmse_mean': float(np.mean(rmse_values)),
+            'rmse_std': float(np.std(rmse_values)),
+            'rmse_ci_95': (float(np.mean(rmse_values) - 1.96 * np.std(rmse_values) / np.sqrt(n_splits)),
+                          float(np.mean(rmse_values) + 1.96 * np.std(rmse_values) / np.sqrt(n_splits))),
+            'mae_mean': float(np.mean(mae_values)),
+            'mae_std': float(np.std(mae_values)),
+            'mae_ci_95': (float(np.mean(mae_values) - 1.96 * np.std(mae_values) / np.sqrt(n_splits)),
+                         float(np.mean(mae_values) + 1.96 * np.std(mae_values) / np.sqrt(n_splits))),
+            'r2_mean': float(np.mean(r2_values)),
+            'r2_std': float(np.std(r2_values)),
+            'r2_ci_95': (float(np.mean(r2_values) - 1.96 * np.std(r2_values) / np.sqrt(n_splits)),
+                        float(np.mean(r2_values) + 1.96 * np.std(r2_values) / np.sqrt(n_splits)))
+        }
+        
+        logger.info(f"\nCross-Validation Summary:")
+        logger.info(f"  RMSE: {cv_results['rmse_mean']:.2f} ± {cv_results['rmse_std']:.2f} (95% CI: {cv_results['rmse_ci_95'][0]:.2f}-{cv_results['rmse_ci_95'][1]:.2f})")
+        logger.info(f"  MAE:  {cv_results['mae_mean']:.2f} ± {cv_results['mae_std']:.2f} (95% CI: {cv_results['mae_ci_95'][0]:.2f}-{cv_results['mae_ci_95'][1]:.2f})")
+        logger.info(f"  R²:   {cv_results['r2_mean']:.4f} ± {cv_results['r2_std']:.4f} (95% CI: {cv_results['r2_ci_95'][0]:.4f}-{cv_results['r2_ci_95'][1]:.4f})")
+        
+        return cv_results
+    
+    def bootstrap_confidence_interval(self,
+                                      y_true: np.ndarray,
+                                      y_pred: np.ndarray,
+                                      metric_func: Callable,
+                                      n_iterations: int = 1000,
+                                      confidence_level: float = 0.95) -> Tuple[float, float, float]:
+        """
+        Calculate bootstrap confidence interval for a metric
+        
+        Args:
+            y_true: True values
+            y_pred: Predicted values
+            metric_func: Function that computes metric(y_true, y_pred)
+            n_iterations: Number of bootstrap iterations
+            confidence_level: Confidence level (default 95%)
+            
+        Returns:
+            Tuple of (mean, lower_bound, upper_bound)
+        """
+        n_samples = len(y_true)
+        bootstrap_metrics = []
+        
+        for _ in range(n_iterations):
+            # Sample with replacement
+            indices = np.random.choice(n_samples, size=n_samples, replace=True)
+            y_true_sample = y_true[indices]
+            y_pred_sample = y_pred[indices]
+            
+            # Calculate metric
+            metric_value = metric_func(y_true_sample, y_pred_sample)
+            bootstrap_metrics.append(metric_value)
+        
+        bootstrap_metrics = np.array(bootstrap_metrics)
+        mean_value = np.mean(bootstrap_metrics)
+        
+        # Calculate percentile confidence intervals
+        alpha = (1 - confidence_level) / 2
+        lower_bound = np.percentile(bootstrap_metrics, alpha * 100)
+        upper_bound = np.percentile(bootstrap_metrics, (1 - alpha) * 100)
+        
+        return float(mean_value), float(lower_bound), float(upper_bound)
+    
+    def evaluate_with_confidence(self,
+                                 y_true: np.ndarray,
+                                 y_pred: np.ndarray,
+                                 model_name: str = 'model',
+                                 n_bootstrap: int = 1000) -> Dict:
+        """
+        Evaluate predictions with bootstrap confidence intervals
+        
+        Args:
+            y_true: True RUL values
+            y_pred: Predicted RUL values
+            model_name: Name of the model
+            n_bootstrap: Number of bootstrap iterations
+            
+        Returns:
+            Dictionary of metrics with confidence intervals
+        """
+        logger.info(f"Evaluating {model_name} with bootstrap confidence intervals...")
+        
+        # Define metric functions
+        def rmse_func(yt, yp):
+            return np.sqrt(mean_squared_error(yt, yp))
+        
+        def mae_func(yt, yp):
+            return mean_absolute_error(yt, yp)
+        
+        def r2_func(yt, yp):
+            return r2_score(yt, yp)
+        
+        # Calculate bootstrap confidence intervals
+        rmse_mean, rmse_low, rmse_high = self.bootstrap_confidence_interval(
+            y_true, y_pred, rmse_func, n_bootstrap
+        )
+        mae_mean, mae_low, mae_high = self.bootstrap_confidence_interval(
+            y_true, y_pred, mae_func, n_bootstrap
+        )
+        r2_mean, r2_low, r2_high = self.bootstrap_confidence_interval(
+            y_true, y_pred, r2_func, n_bootstrap
+        )
+        
+        metrics = {
+            'model_name': model_name,
+            'rmse': rmse_mean,
+            'rmse_ci_95': (rmse_low, rmse_high),
+            'mae': mae_mean,
+            'mae_ci_95': (mae_low, mae_high),
+            'r2': r2_mean,
+            'r2_ci_95': (r2_low, r2_high),
+            'n_bootstrap': n_bootstrap
+        }
+        
+        logger.info(f"  RMSE: {rmse_mean:.2f} (95% CI: {rmse_low:.2f}-{rmse_high:.2f})")
+        logger.info(f"  MAE:  {mae_mean:.2f} (95% CI: {mae_low:.2f}-{mae_high:.2f})")
+        logger.info(f"  R²:   {r2_mean:.4f} (95% CI: {r2_low:.4f}-{r2_high:.4f})")
+        
+        self.results[f"{model_name}_with_ci"] = metrics
+        return metrics
 
 
 if __name__ == "__main__":
