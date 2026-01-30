@@ -357,6 +357,257 @@ def asymmetric_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return score
 
 
+# ==================== Prediction Explainability ====================
+class PredictionExplainer:
+    """
+    Generates human-readable explanations for RUL predictions
+    Helps operators understand why a particular RUL was predicted
+    """
+    
+    def __init__(self, feature_names: List[str] = None):
+        """
+        Initialize prediction explainer
+        
+        Args:
+            feature_names: List of feature names used in the model
+        """
+        self.feature_names = feature_names or []
+        self.sensor_descriptions = {
+            'sensor_2': 'LPC outlet temperature',
+            'sensor_3': 'HPC outlet temperature',
+            'sensor_4': 'LPT outlet temperature',
+            'sensor_7': 'HPC outlet pressure',
+            'sensor_8': 'Physical fan speed',
+            'sensor_9': 'Physical core speed',
+            'sensor_11': 'Static pressure at HPC outlet',
+            'sensor_12': 'Fuel flow ratio',
+            'sensor_13': 'Corrected fan speed',
+            'sensor_14': 'Corrected core speed',
+            'sensor_15': 'Bypass ratio',
+            'sensor_17': 'Bleed enthalpy',
+            'sensor_20': 'HPT coolant bleed',
+            'sensor_21': 'LPT coolant bleed'
+        }
+        
+        # Thresholds for concern levels
+        self.rul_thresholds = {
+            'critical': 30,
+            'warning': 50,
+            'caution': 80
+        }
+        
+        logger.info("Initialized PredictionExplainer")
+    
+    def explain_prediction(self,
+                          rul_predicted: float,
+                          sensor_values: Dict[str, float] = None,
+                          sensor_trends: Dict[str, str] = None) -> Dict:
+        """
+        Generate natural language explanation for a single RUL prediction
+        
+        Args:
+            rul_predicted: Predicted RUL value
+            sensor_values: Dictionary of current sensor values (optional)
+            sensor_trends: Dictionary of sensor trends ('increasing', 'decreasing', 'stable')
+            
+        Returns:
+            Dictionary with explanation components
+        """
+        # Determine health status
+        if rul_predicted < self.rul_thresholds['critical']:
+            status = 'CRITICAL'
+            urgency = 'immediate'
+            status_emoji = '🔴'
+            summary = f"Engine requires immediate attention. Predicted remaining life is only {rul_predicted:.0f} cycles."
+        elif rul_predicted < self.rul_thresholds['warning']:
+            status = 'WARNING'
+            urgency = 'urgent'
+            status_emoji = '🟡'
+            summary = f"Engine shows signs of degradation. Predicted remaining life is {rul_predicted:.0f} cycles."
+        elif rul_predicted < self.rul_thresholds['caution']:
+            status = 'CAUTION'
+            urgency = 'moderate'
+            status_emoji = '🟠'
+            summary = f"Engine is showing early degradation signs. Predicted remaining life is {rul_predicted:.0f} cycles."
+        else:
+            status = 'HEALTHY'
+            urgency = 'low'
+            status_emoji = '🟢'
+            summary = f"Engine is operating within normal parameters. Predicted remaining life is {rul_predicted:.0f} cycles."
+        
+        # Build detailed explanation
+        explanation_parts = [summary]
+        
+        if sensor_trends:
+            concerning_sensors = [s for s, t in sensor_trends.items() 
+                                if t in ['increasing', 'decreasing'] and 'temp' in s.lower()]
+            if concerning_sensors:
+                explanation_parts.append(
+                    f"Temperature sensors showing concerning trends: {', '.join(concerning_sensors)}"
+                )
+        
+        # Recommendations based on status
+        recommendations = self._get_recommendations(status, rul_predicted)
+        
+        return {
+            'status': status,
+            'status_emoji': status_emoji,
+            'urgency_level': urgency,
+            'rul_predicted': rul_predicted,
+            'summary': summary,
+            'detailed_explanation': ' '.join(explanation_parts),
+            'recommendations': recommendations,
+            'confidence_note': self._get_confidence_note(rul_predicted)
+        }
+    
+    def _get_recommendations(self, status: str, rul: float) -> List[str]:
+        """Generate action recommendations based on status"""
+        if status == 'CRITICAL':
+            return [
+                "Ground aircraft immediately for inspection",
+                "Initiate emergency maintenance protocol",
+                "Review recent flight data for anomalies",
+                "Notify flight operations and maintenance crew"
+            ]
+        elif status == 'WARNING':
+            return [
+                "Schedule maintenance within 48 hours",
+                "Increase monitoring frequency",
+                "Prepare replacement parts",
+                "Consider reducing operational load"
+            ]
+        elif status == 'CAUTION':
+            return [
+                f"Plan maintenance within next {int(rul * 0.5)} cycles",
+                "Include in next scheduled maintenance window",
+                "Monitor sensor trends closely"
+            ]
+        else:
+            return [
+                "Continue normal operations",
+                "Maintain regular monitoring schedule",
+                "No immediate action required"
+            ]
+    
+    def _get_confidence_note(self, rul: float) -> str:
+        """Generate confidence note based on RUL value"""
+        if rul < 20:
+            return "High confidence - extensive degradation patterns detected"
+        elif rul < 50:
+            return "Moderate-high confidence - clear degradation trajectory"
+        elif rul < 100:
+            return "Moderate confidence - some uncertainty in exact RUL"
+        else:
+            return "Lower confidence - early stage prediction with larger margin"
+    
+    def identify_critical_sensors(self,
+                                  sensor_data: pd.DataFrame,
+                                  rul: float,
+                                  n_top: int = 5) -> List[Dict]:
+        """
+        Identify sensors most likely responsible for degradation
+        
+        Args:
+            sensor_data: DataFrame with sensor readings over time
+            rul: Current RUL prediction
+            n_top: Number of top sensors to return
+            
+        Returns:
+            List of dictionaries with sensor analysis
+        """
+        critical_sensors = []
+        
+        sensor_cols = [c for c in sensor_data.columns if c.startswith('sensor_')]
+        
+        for col in sensor_cols:
+            if col not in sensor_data.columns:
+                continue
+                
+            values = sensor_data[col].values
+            if len(values) < 2:
+                continue
+            
+            # Calculate metrics
+            recent_trend = (values[-1] - values[-10]) if len(values) >= 10 else (values[-1] - values[0])
+            volatility = np.std(values[-20:]) if len(values) >= 20 else np.std(values)
+            current_vs_mean = abs(values[-1] - np.mean(values)) / (np.std(values) + 1e-6)
+            
+            # Score the sensor (higher = more concerning)
+            concern_score = abs(recent_trend) + volatility + current_vs_mean
+            
+            critical_sensors.append({
+                'sensor': col,
+                'description': self.sensor_descriptions.get(col, 'Unknown sensor'),
+                'concern_score': float(concern_score),
+                'trend': 'increasing' if recent_trend > 0 else 'decreasing',
+                'trend_magnitude': abs(float(recent_trend)),
+                'current_deviation': float(current_vs_mean)
+            })
+        
+        # Sort by concern score and return top N
+        critical_sensors.sort(key=lambda x: x['concern_score'], reverse=True)
+        return critical_sensors[:n_top]
+    
+    def generate_report(self,
+                       unit_id: int,
+                       rul_predicted: float,
+                       sensor_data: pd.DataFrame = None,
+                       include_sensors: bool = True) -> str:
+        """
+        Generate comprehensive prediction report
+        
+        Args:
+            unit_id: Engine unit ID
+            rul_predicted: Predicted RUL value
+            sensor_data: Historical sensor data for this engine
+            include_sensors: Whether to include sensor analysis
+            
+        Returns:
+            Formatted report string
+        """
+        explanation = self.explain_prediction(rul_predicted)
+        
+        report_lines = [
+            "=" * 60,
+            f"RUL PREDICTION REPORT - Engine Unit {unit_id}",
+            "=" * 60,
+            "",
+            f"{explanation['status_emoji']} Status: {explanation['status']}",
+            f"Predicted RUL: {rul_predicted:.0f} cycles",
+            f"Urgency: {explanation['urgency_level'].upper()}",
+            "",
+            "SUMMARY:",
+            explanation['summary'],
+            "",
+            f"Confidence: {explanation['confidence_note']}",
+            "",
+            "RECOMMENDATIONS:"
+        ]
+        
+        for i, rec in enumerate(explanation['recommendations'], 1):
+            report_lines.append(f"  {i}. {rec}")
+        
+        if include_sensors and sensor_data is not None and len(sensor_data) > 0:
+            report_lines.extend([
+                "",
+                "CRITICAL SENSOR ANALYSIS:"
+            ])
+            
+            critical = self.identify_critical_sensors(sensor_data, rul_predicted)
+            for sensor in critical:
+                report_lines.append(
+                    f"  • {sensor['sensor']}: {sensor['description']} "
+                    f"(trend: {sensor['trend']}, concern: {sensor['concern_score']:.2f})"
+                )
+        
+        report_lines.extend([
+            "",
+            "=" * 60
+        ])
+        
+        return '\n'.join(report_lines)
+
+
 if __name__ == "__main__":
     logger.info("Utility functions loaded successfully")
     print("Available utility functions:")
