@@ -344,6 +344,273 @@ class RULEvaluator:
         return metrics
 
 
+class PerformanceBenchmark:
+    """
+    Comprehensive benchmarking for model inference performance
+    Measures latency, throughput, and memory usage
+    """
+    
+    def __init__(self):
+        """Initialize performance benchmark"""
+        self.benchmark_results = {}
+        logger.info("Initialized PerformanceBenchmark")
+    
+    def benchmark_inference(self,
+                           model,
+                           X_test: np.ndarray,
+                           n_runs: int = 100,
+                           warmup_runs: int = 10) -> Dict:
+        """
+        Benchmark model inference latency
+        
+        Args:
+            model: Trained model with predict() method
+            X_test: Test data for inference
+            n_runs: Number of inference runs for timing
+            warmup_runs: Number of warmup runs before timing
+            
+        Returns:
+            Dictionary with latency statistics
+        """
+        import time
+        
+        logger.info(f"Benchmarking inference latency ({n_runs} runs)...")
+        
+        # Warmup runs
+        for _ in range(warmup_runs):
+            _ = model.predict(X_test[:1])
+        
+        # Single sample timing
+        single_times = []
+        for _ in range(n_runs):
+            start = time.perf_counter()
+            _ = model.predict(X_test[:1])
+            single_times.append((time.perf_counter() - start) * 1000)  # ms
+        
+        # Batch timing
+        batch_times = []
+        batch_size = min(32, len(X_test))
+        for _ in range(n_runs // 5):
+            start = time.perf_counter()
+            _ = model.predict(X_test[:batch_size])
+            batch_times.append((time.perf_counter() - start) * 1000)  # ms
+        
+        # Full dataset timing
+        full_start = time.perf_counter()
+        _ = model.predict(X_test)
+        full_time = (time.perf_counter() - full_start) * 1000
+        
+        results = {
+            'single_sample': {
+                'mean_ms': float(np.mean(single_times)),
+                'std_ms': float(np.std(single_times)),
+                'min_ms': float(np.min(single_times)),
+                'max_ms': float(np.max(single_times)),
+                'p50_ms': float(np.percentile(single_times, 50)),
+                'p95_ms': float(np.percentile(single_times, 95)),
+                'p99_ms': float(np.percentile(single_times, 99))
+            },
+            'batch_32': {
+                'mean_ms': float(np.mean(batch_times)),
+                'per_sample_ms': float(np.mean(batch_times) / batch_size)
+            },
+            'full_dataset': {
+                'total_ms': float(full_time),
+                'n_samples': len(X_test),
+                'per_sample_ms': float(full_time / len(X_test))
+            }
+        }
+        
+        logger.info(f"  Single sample: {results['single_sample']['mean_ms']:.3f}ms (p95: {results['single_sample']['p95_ms']:.3f}ms)")
+        logger.info(f"  Batch (32): {results['batch_32']['per_sample_ms']:.3f}ms per sample")
+        
+        return results
+    
+    def benchmark_throughput(self,
+                            model,
+                            X_test: np.ndarray,
+                            duration_seconds: float = 5.0) -> Dict:
+        """
+        Benchmark model throughput (predictions per second)
+        
+        Args:
+            model: Trained model
+            X_test: Test data
+            duration_seconds: How long to run the benchmark
+            
+        Returns:
+            Dictionary with throughput statistics
+        """
+        import time
+        
+        logger.info(f"Benchmarking throughput for {duration_seconds}s...")
+        
+        # Single sample throughput
+        single_count = 0
+        single_start = time.perf_counter()
+        while (time.perf_counter() - single_start) < duration_seconds:
+            _ = model.predict(X_test[:1])
+            single_count += 1
+        single_elapsed = time.perf_counter() - single_start
+        single_throughput = single_count / single_elapsed
+        
+        # Batch throughput
+        batch_size = min(32, len(X_test))
+        batch_count = 0
+        batch_start = time.perf_counter()
+        while (time.perf_counter() - batch_start) < duration_seconds:
+            _ = model.predict(X_test[:batch_size])
+            batch_count += 1
+        batch_elapsed = time.perf_counter() - batch_start
+        batch_throughput = (batch_count * batch_size) / batch_elapsed
+        
+        results = {
+            'single_sample_throughput': float(single_throughput),
+            'batch_throughput': float(batch_throughput),
+            'batch_size': batch_size,
+            'duration_seconds': duration_seconds
+        }
+        
+        logger.info(f"  Single sample: {single_throughput:.1f} pred/sec")
+        logger.info(f"  Batch ({batch_size}): {batch_throughput:.1f} pred/sec")
+        
+        return results
+    
+    def memory_profiling(self, model, X_test: np.ndarray) -> Dict:
+        """
+        Profile memory usage during inference
+        
+        Args:
+            model: Trained model
+            X_test: Test data
+            
+        Returns:
+            Dictionary with memory statistics
+        """
+        import sys
+        
+        logger.info("Profiling memory usage...")
+        
+        # Model size estimate
+        try:
+            import pickle
+            import io
+            buffer = io.BytesIO()
+            pickle.dump(model, buffer)
+            model_size_bytes = buffer.tell()
+        except Exception:
+            model_size_bytes = sys.getsizeof(model)
+        
+        # Input data size
+        input_size_bytes = X_test.nbytes
+        
+        # Output size
+        output = model.predict(X_test[:100])
+        output_size_per_sample = sys.getsizeof(output) / 100
+        
+        results = {
+            'model_size_mb': float(model_size_bytes / (1024 * 1024)),
+            'input_size_mb': float(input_size_bytes / (1024 * 1024)),
+            'output_size_per_sample_kb': float(output_size_per_sample / 1024),
+            'estimated_batch_memory_mb': float((input_size_bytes + model_size_bytes) / (1024 * 1024))
+        }
+        
+        logger.info(f"  Model size: {results['model_size_mb']:.2f} MB")
+        logger.info(f"  Input size: {results['input_size_mb']:.2f} MB")
+        
+        return results
+    
+    def generate_benchmark_report(self,
+                                  model,
+                                  X_test: np.ndarray,
+                                  model_name: str = 'Model') -> Dict:
+        """
+        Generate comprehensive benchmark report
+        
+        Args:
+            model: Trained model
+            X_test: Test data
+            model_name: Name of the model
+            
+        Returns:
+            Complete benchmark report dictionary
+        """
+        logger.info(f"Generating benchmark report for {model_name}...")
+        
+        latency = self.benchmark_inference(model, X_test)
+        throughput = self.benchmark_throughput(model, X_test, duration_seconds=3.0)
+        memory = self.memory_profiling(model, X_test)
+        
+        report = {
+            'model_name': model_name,
+            'test_samples': len(X_test),
+            'latency': latency,
+            'throughput': throughput,
+            'memory': memory,
+            'summary': {
+                'avg_latency_ms': latency['single_sample']['mean_ms'],
+                'p95_latency_ms': latency['single_sample']['p95_ms'],
+                'throughput_per_sec': throughput['batch_throughput'],
+                'model_size_mb': memory['model_size_mb']
+            }
+        }
+        
+        self.benchmark_results[model_name] = report
+        
+        return report
+    
+    def compare_benchmarks(self, 
+                          models: Dict[str, Any],
+                          X_test: np.ndarray) -> pd.DataFrame:
+        """
+        Compare benchmarks across multiple models
+        
+        Args:
+            models: Dictionary of {model_name: model}
+            X_test: Test data
+            
+        Returns:
+            DataFrame with comparison
+        """
+        results = []
+        
+        for name, model in models.items():
+            report = self.generate_benchmark_report(model, X_test, name)
+            results.append({
+                'model': name,
+                'latency_ms': report['summary']['avg_latency_ms'],
+                'p95_latency_ms': report['summary']['p95_latency_ms'],
+                'throughput_per_sec': report['summary']['throughput_per_sec'],
+                'model_size_mb': report['summary']['model_size_mb']
+            })
+        
+        return pd.DataFrame(results).sort_values('latency_ms')
+    
+    def print_report(self, model_name: str = None):
+        """Print formatted benchmark report"""
+        if model_name:
+            reports = {model_name: self.benchmark_results.get(model_name, {})}
+        else:
+            reports = self.benchmark_results
+        
+        for name, report in reports.items():
+            if not report:
+                continue
+            
+            print("\n" + "="*60)
+            print(f"PERFORMANCE BENCHMARK: {name}")
+            print("="*60)
+            print(f"\n📊 LATENCY:")
+            print(f"  Single sample:  {report['latency']['single_sample']['mean_ms']:.3f}ms avg")
+            print(f"  P95 latency:    {report['latency']['single_sample']['p95_ms']:.3f}ms")
+            print(f"  P99 latency:    {report['latency']['single_sample']['p99_ms']:.3f}ms")
+            print(f"\n⚡ THROUGHPUT:")
+            print(f"  {report['throughput']['batch_throughput']:.1f} predictions/sec (batch)")
+            print(f"\n💾 MEMORY:")
+            print(f"  Model size: {report['memory']['model_size_mb']:.2f} MB")
+            print("="*60)
+
+
 if __name__ == "__main__":
     # Test evaluator
     print("="*60)
