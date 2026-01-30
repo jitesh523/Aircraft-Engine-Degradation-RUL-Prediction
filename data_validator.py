@@ -275,6 +275,328 @@ class DataValidator:
         return all_valid, full_report
 
 
+class SensorAnomalyDetector:
+    """
+    Detects anomalies in individual sensor readings
+    Identifies unusual patterns and correlation changes
+    """
+    
+    def __init__(self):
+        """Initialize sensor anomaly detector"""
+        # Known degradation patterns for turbofan engines
+        self.degradation_patterns = {
+            'high_temp_degradation': {
+                'description': 'High temperature rise indicating combustor issues',
+                'sensors': ['sensor_3', 'sensor_4'],
+                'pattern': 'increasing',
+                'threshold_std': 2.0
+            },
+            'pressure_loss': {
+                'description': 'Pressure drop indicating compressor degradation',
+                'sensors': ['sensor_7', 'sensor_11'],
+                'pattern': 'decreasing',
+                'threshold_std': 1.5
+            },
+            'speed_anomaly': {
+                'description': 'Speed variation indicating bearing wear',
+                'sensors': ['sensor_8', 'sensor_9', 'sensor_13', 'sensor_14'],
+                'pattern': 'fluctuating',
+                'threshold_std': 2.0
+            },
+            'fuel_flow_issue': {
+                'description': 'Fuel flow anomaly indicating fuel system problems',
+                'sensors': ['sensor_12'],
+                'pattern': 'deviating',
+                'threshold_std': 1.8
+            }
+        }
+        
+        # Baseline correlation pairs for healthy engines
+        self.expected_correlations = {
+            ('sensor_8', 'sensor_13'): 0.95,  # Fan speed sensors
+            ('sensor_9', 'sensor_14'): 0.90,  # Core speed sensors
+            ('sensor_3', 'sensor_4'): 0.85,   # Temperature sensors
+        }
+        
+        logger.info("Initialized SensorAnomalyDetector")
+    
+    def detect_sensor_anomalies(self,
+                                df: pd.DataFrame,
+                                sensor_cols: List[str] = None,
+                                method: str = 'zscore',
+                                threshold: float = 3.0) -> Dict:
+        """
+        Detect anomalies in individual sensors
+        
+        Args:
+            df: DataFrame with sensor data
+            sensor_cols: List of sensor columns (default: all sensor_* columns)
+            method: Detection method ('zscore', 'iqr', 'rolling')
+            threshold: Anomaly threshold
+            
+        Returns:
+            Dictionary with anomaly detection results
+        """
+        if sensor_cols is None:
+            sensor_cols = [c for c in df.columns if c.startswith('sensor_')]
+        
+        logger.info(f"Detecting anomalies using {method} method on {len(sensor_cols)} sensors...")
+        
+        anomalies = {}
+        
+        for col in sensor_cols:
+            if col not in df.columns:
+                continue
+            
+            values = df[col].values
+            
+            if method == 'zscore':
+                mean = np.mean(values)
+                std = np.std(values)
+                if std > 0:
+                    z_scores = np.abs((values - mean) / std)
+                    anomaly_mask = z_scores > threshold
+                else:
+                    anomaly_mask = np.zeros(len(values), dtype=bool)
+                    
+            elif method == 'iqr':
+                q1 = np.percentile(values, 25)
+                q3 = np.percentile(values, 75)
+                iqr = q3 - q1
+                lower = q1 - threshold * iqr
+                upper = q3 + threshold * iqr
+                anomaly_mask = (values < lower) | (values > upper)
+                
+            elif method == 'rolling':
+                # Rolling window anomaly detection
+                window = min(20, len(values) // 10)
+                rolling_mean = pd.Series(values).rolling(window, min_periods=1).mean()
+                rolling_std = pd.Series(values).rolling(window, min_periods=1).std()
+                z_scores = np.abs((values - rolling_mean) / (rolling_std + 1e-6))
+                anomaly_mask = z_scores > threshold
+            else:
+                anomaly_mask = np.zeros(len(values), dtype=bool)
+            
+            n_anomalies = anomaly_mask.sum()
+            
+            if n_anomalies > 0:
+                anomaly_indices = np.where(anomaly_mask)[0]
+                anomalies[col] = {
+                    'count': int(n_anomalies),
+                    'percentage': float(n_anomalies / len(values) * 100),
+                    'indices': anomaly_indices[:20].tolist(),  # First 20
+                    'values': values[anomaly_mask][:10].tolist()  # First 10 values
+                }
+        
+        result = {
+            'method': method,
+            'threshold': threshold,
+            'total_sensors_checked': len(sensor_cols),
+            'sensors_with_anomalies': len(anomalies),
+            'anomalies': anomalies
+        }
+        
+        logger.info(f"  Found anomalies in {len(anomalies)} sensors")
+        
+        return result
+    
+    def sensor_correlation_check(self,
+                                 df: pd.DataFrame,
+                                 tolerance: float = 0.2) -> Dict:
+        """
+        Check for unusual sensor correlations that may indicate failures
+        
+        Args:
+            df: DataFrame with sensor data
+            tolerance: Acceptable deviation from expected correlation
+            
+        Returns:
+            Dictionary with correlation analysis
+        """
+        logger.info("Checking sensor correlations...")
+        
+        sensor_cols = [c for c in df.columns if c.startswith('sensor_')]
+        
+        # Calculate actual correlation matrix
+        corr_matrix = df[sensor_cols].corr()
+        
+        # Check expected correlations
+        unexpected_correlations = []
+        
+        for (sensor_a, sensor_b), expected_corr in self.expected_correlations.items():
+            if sensor_a in corr_matrix.columns and sensor_b in corr_matrix.columns:
+                actual_corr = corr_matrix.loc[sensor_a, sensor_b]
+                deviation = abs(actual_corr - expected_corr)
+                
+                if deviation > tolerance:
+                    unexpected_correlations.append({
+                        'sensor_pair': (sensor_a, sensor_b),
+                        'expected_correlation': expected_corr,
+                        'actual_correlation': float(actual_corr),
+                        'deviation': float(deviation),
+                        'status': 'WARNING' if deviation > tolerance else 'OK'
+                    })
+        
+        # Find highly correlated pairs that shouldn't be
+        high_correlations = []
+        for i, col_a in enumerate(sensor_cols):
+            for col_b in sensor_cols[i+1:]:
+                corr = abs(corr_matrix.loc[col_a, col_b])
+                if corr > 0.95 and (col_a, col_b) not in self.expected_correlations:
+                    high_correlations.append({
+                        'sensors': (col_a, col_b),
+                        'correlation': float(corr)
+                    })
+        
+        result = {
+            'expected_correlations_checked': len(self.expected_correlations),
+            'unexpected_deviations': unexpected_correlations,
+            'unexpected_high_correlations': high_correlations[:5],  # Top 5
+            'has_correlation_issues': len(unexpected_correlations) > 0
+        }
+        
+        if unexpected_correlations:
+            logger.warning(f"  Found {len(unexpected_correlations)} unexpected correlation deviations")
+        
+        return result
+    
+    def degradation_pattern_match(self,
+                                  df: pd.DataFrame,
+                                  unit_id: int = None) -> Dict:
+        """
+        Match sensor readings against known degradation patterns
+        
+        Args:
+            df: DataFrame with sensor data
+            unit_id: Specific unit to analyze (optional)
+            
+        Returns:
+            Dictionary with pattern matching results
+        """
+        logger.info("Matching against known degradation patterns...")
+        
+        if unit_id is not None and 'unit_id' in df.columns:
+            df = df[df['unit_id'] == unit_id].copy()
+        
+        matched_patterns = []
+        
+        for pattern_name, pattern_info in self.degradation_patterns.items():
+            pattern_sensors = pattern_info['sensors']
+            pattern_type = pattern_info['pattern']
+            threshold_std = pattern_info['threshold_std']
+            
+            sensor_matches = 0
+            sensor_details = []
+            
+            for sensor in pattern_sensors:
+                if sensor not in df.columns:
+                    continue
+                
+                values = df[sensor].values
+                if len(values) < 10:
+                    continue
+                
+                # Calculate trend and deviation
+                recent = values[-10:]
+                earlier = values[:10] if len(values) >= 20 else values[:len(values)//2]
+                
+                trend = np.mean(recent) - np.mean(earlier)
+                overall_std = np.std(values)
+                normalized_trend = trend / (overall_std + 1e-6)
+                
+                # Check pattern match
+                is_match = False
+                if pattern_type == 'increasing' and normalized_trend > threshold_std:
+                    is_match = True
+                elif pattern_type == 'decreasing' and normalized_trend < -threshold_std:
+                    is_match = True
+                elif pattern_type == 'fluctuating':
+                    recent_std = np.std(recent)
+                    if recent_std > threshold_std * overall_std * 0.3:
+                        is_match = True
+                elif pattern_type == 'deviating':
+                    if abs(normalized_trend) > threshold_std:
+                        is_match = True
+                
+                if is_match:
+                    sensor_matches += 1
+                    sensor_details.append({
+                        'sensor': sensor,
+                        'trend': float(normalized_trend),
+                        'raw_trend': float(trend)
+                    })
+            
+            # Pattern is matched if majority of sensors show the pattern
+            if len(pattern_sensors) > 0 and sensor_matches >= len(pattern_sensors) * 0.5:
+                matched_patterns.append({
+                    'pattern': pattern_name,
+                    'description': pattern_info['description'],
+                    'confidence': sensor_matches / len(pattern_sensors),
+                    'matched_sensors': sensor_details
+                })
+        
+        result = {
+            'patterns_checked': len(self.degradation_patterns),
+            'patterns_matched': len(matched_patterns),
+            'matches': matched_patterns,
+            'health_assessment': 'DEGRADING' if matched_patterns else 'NORMAL'
+        }
+        
+        if matched_patterns:
+            logger.warning(f"  Matched {len(matched_patterns)} degradation patterns")
+            for match in matched_patterns:
+                logger.warning(f"    - {match['pattern']}: {match['description']}")
+        
+        return result
+    
+    def full_sensor_analysis(self,
+                            df: pd.DataFrame,
+                            unit_id: int = None) -> Dict:
+        """
+        Run complete sensor anomaly analysis
+        
+        Args:
+            df: DataFrame with sensor data
+            unit_id: Specific unit to analyze (optional)
+            
+        Returns:
+            Complete analysis report
+        """
+        if unit_id is not None and 'unit_id' in df.columns:
+            df = df[df['unit_id'] == unit_id].copy()
+        
+        anomalies = self.detect_sensor_anomalies(df)
+        correlations = self.sensor_correlation_check(df)
+        patterns = self.degradation_pattern_match(df)
+        
+        # Overall health assessment
+        risk_score = 0
+        if anomalies['sensors_with_anomalies'] > 3:
+            risk_score += 2
+        if correlations['has_correlation_issues']:
+            risk_score += 2
+        if patterns['patterns_matched'] > 0:
+            risk_score += 3 * patterns['patterns_matched']
+        
+        if risk_score >= 5:
+            overall_status = 'CRITICAL'
+        elif risk_score >= 3:
+            overall_status = 'WARNING'
+        elif risk_score >= 1:
+            overall_status = 'CAUTION'
+        else:
+            overall_status = 'HEALTHY'
+        
+        return {
+            'unit_id': unit_id,
+            'anomaly_detection': anomalies,
+            'correlation_analysis': correlations,
+            'pattern_matching': patterns,
+            'risk_score': risk_score,
+            'overall_status': overall_status
+        }
+
+
 if __name__ == "__main__":
     # Test data validator
     print("="*60)
