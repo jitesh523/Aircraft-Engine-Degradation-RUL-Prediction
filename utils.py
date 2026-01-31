@@ -8,6 +8,8 @@ import pandas as pd
 import pickle
 import json
 import logging
+import os
+from datetime import datetime
 from typing import Tuple, List, Dict, Any
 import config
 
@@ -606,6 +608,326 @@ class PredictionExplainer:
         ])
         
         return '\n'.join(report_lines)
+
+
+class ComprehensiveReportGenerator:
+    """
+    Generates comprehensive analysis reports for RUL predictions
+    Supports multiple output formats (Markdown, JSON, HTML)
+    """
+    
+    def __init__(self, output_dir: str = None):
+        """
+        Initialize report generator
+        
+        Args:
+            output_dir: Directory to save reports
+        """
+        self.output_dir = output_dir or os.path.join(config.RESULTS_DIR, 'reports')
+        os.makedirs(self.output_dir, exist_ok=True)
+        self.report_data = {}
+        logger.info(f"Initialized ComprehensiveReportGenerator (output: {self.output_dir})")
+    
+    def generate_fleet_summary(self,
+                               predictions_df: pd.DataFrame,
+                               rul_col: str = 'RUL_pred') -> Dict:
+        """
+        Generate fleet-wide summary statistics
+        
+        Args:
+            predictions_df: DataFrame with predictions for all engines
+            rul_col: Name of RUL prediction column
+            
+        Returns:
+            Dictionary with fleet summary
+        """
+        logger.info("Generating fleet summary...")
+        
+        # Count by health status
+        def get_status(rul):
+            if rul < 30:
+                return 'Critical'
+            elif rul < 50:
+                return 'Warning'
+            elif rul < 80:
+                return 'Caution'
+            else:
+                return 'Healthy'
+        
+        engine_ruls = predictions_df.groupby('unit_id')[rul_col].last()
+        statuses = engine_ruls.apply(get_status)
+        
+        summary = {
+            'total_engines': len(engine_ruls),
+            'fleet_status': statuses.value_counts().to_dict(),
+            'rul_statistics': {
+                'mean': float(engine_ruls.mean()),
+                'median': float(engine_ruls.median()),
+                'min': float(engine_ruls.min()),
+                'max': float(engine_ruls.max()),
+                'std': float(engine_ruls.std())
+            },
+            'critical_engines': engine_ruls[engine_ruls < 30].index.tolist(),
+            'warning_engines': engine_ruls[(engine_ruls >= 30) & (engine_ruls < 50)].index.tolist()
+        }
+        
+        self.report_data['fleet_summary'] = summary
+        return summary
+    
+    def generate_engine_details(self,
+                                predictions_df: pd.DataFrame,
+                                engine_ids: List[int] = None,
+                                rul_col: str = 'RUL_pred') -> Dict:
+        """
+        Generate detailed report for specific engines
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            engine_ids: List of engine IDs (default: critical engines)
+            rul_col: RUL prediction column name
+            
+        Returns:
+            Dictionary with engine details
+        """
+        if engine_ids is None:
+            # Default to engines with lowest RUL
+            engine_ruls = predictions_df.groupby('unit_id')[rul_col].last()
+            engine_ids = engine_ruls.nsmallest(5).index.tolist()
+        
+        details = {}
+        
+        for engine_id in engine_ids:
+            engine_data = predictions_df[predictions_df['unit_id'] == engine_id]
+            
+            if len(engine_data) == 0:
+                continue
+            
+            # Calculate metrics
+            current_rul = engine_data[rul_col].iloc[-1]
+            rul_history = engine_data[rul_col].values
+            
+            # Estimate degradation rate
+            if len(rul_history) >= 10:
+                recent_rate = (rul_history[-10] - rul_history[-1]) / 10
+            else:
+                recent_rate = rul_history[0] - rul_history[-1] if len(rul_history) > 1 else 0
+            
+            details[engine_id] = {
+                'current_rul': float(current_rul),
+                'degradation_rate': float(recent_rate),
+                'total_cycles': int(len(engine_data)),
+                'status': 'Critical' if current_rul < 30 else 
+                         'Warning' if current_rul < 50 else
+                         'Caution' if current_rul < 80 else 'Healthy'
+            }
+        
+        self.report_data['engine_details'] = details
+        return details
+    
+    def generate_model_performance(self,
+                                   y_true: np.ndarray,
+                                   y_pred: np.ndarray,
+                                   model_name: str = 'Model') -> Dict:
+        """
+        Generate model performance summary
+        
+        Args:
+            y_true: True RUL values
+            y_pred: Predicted RUL values
+            model_name: Name of the model
+            
+        Returns:
+            Dictionary with performance metrics
+        """
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mae = mean_absolute_error(y_true, y_pred)
+        r2 = r2_score(y_true, y_pred)
+        
+        errors = y_pred - y_true
+        
+        performance = {
+            'model_name': model_name,
+            'metrics': {
+                'rmse': float(rmse),
+                'mae': float(mae),
+                'r2': float(r2)
+            },
+            'error_distribution': {
+                'mean_error': float(np.mean(errors)),
+                'std_error': float(np.std(errors)),
+                'max_overestimate': float(np.max(errors)),
+                'max_underestimate': float(np.min(errors))
+            },
+            'prediction_quality': {
+                'within_10_cycles': float((np.abs(errors) <= 10).mean() * 100),
+                'within_20_cycles': float((np.abs(errors) <= 20).mean() * 100),
+                'within_30_cycles': float((np.abs(errors) <= 30).mean() * 100)
+            }
+        }
+        
+        self.report_data['model_performance'] = performance
+        return performance
+    
+    def export_markdown(self, filename: str = None) -> str:
+        """
+        Export report to Markdown format
+        
+        Args:
+            filename: Output filename (optional)
+            
+        Returns:
+            Markdown string
+        """
+        lines = [
+            "# RUL Prediction Analysis Report",
+            f"*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*",
+            ""
+        ]
+        
+        # Fleet Summary
+        if 'fleet_summary' in self.report_data:
+            summary = self.report_data['fleet_summary']
+            lines.extend([
+                "## Fleet Summary",
+                "",
+                f"**Total Engines:** {summary['total_engines']}",
+                "",
+                "### Health Status Distribution",
+                ""
+            ])
+            for status, count in summary['fleet_status'].items():
+                lines.append(f"- {status}: {count} engines")
+            
+            lines.extend([
+                "",
+                "### RUL Statistics",
+                "",
+                f"- Mean: {summary['rul_statistics']['mean']:.1f} cycles",
+                f"- Median: {summary['rul_statistics']['median']:.1f} cycles",
+                f"- Min: {summary['rul_statistics']['min']:.1f} cycles",
+                f"- Max: {summary['rul_statistics']['max']:.1f} cycles",
+                ""
+            ])
+            
+            if summary['critical_engines']:
+                lines.extend([
+                    "### ⚠️ Critical Engines",
+                    "",
+                    f"Engines requiring immediate attention: {summary['critical_engines']}",
+                    ""
+                ])
+        
+        # Model Performance
+        if 'model_performance' in self.report_data:
+            perf = self.report_data['model_performance']
+            lines.extend([
+                "## Model Performance",
+                "",
+                f"**Model:** {perf['model_name']}",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| RMSE | {perf['metrics']['rmse']:.2f} cycles |",
+                f"| MAE | {perf['metrics']['mae']:.2f} cycles |",
+                f"| R² | {perf['metrics']['r2']:.4f} |",
+                "",
+                "### Prediction Accuracy",
+                "",
+                f"- Within 10 cycles: {perf['prediction_quality']['within_10_cycles']:.1f}%",
+                f"- Within 20 cycles: {perf['prediction_quality']['within_20_cycles']:.1f}%",
+                f"- Within 30 cycles: {perf['prediction_quality']['within_30_cycles']:.1f}%",
+                ""
+            ])
+        
+        # Engine Details
+        if 'engine_details' in self.report_data:
+            lines.extend([
+                "## Critical Engine Details",
+                "",
+                "| Engine | RUL | Status | Degradation Rate |",
+                "|--------|-----|--------|------------------|"
+            ])
+            for engine_id, details in self.report_data['engine_details'].items():
+                lines.append(
+                    f"| {engine_id} | {details['current_rul']:.0f} | "
+                    f"{details['status']} | {details['degradation_rate']:.2f}/cycle |"
+                )
+            lines.append("")
+        
+        markdown = '\n'.join(lines)
+        
+        if filename:
+            filepath = os.path.join(self.output_dir, filename)
+            with open(filepath, 'w') as f:
+                f.write(markdown)
+            logger.info(f"Report saved to {filepath}")
+        
+        return markdown
+    
+    def export_json(self, filename: str = None) -> Dict:
+        """
+        Export report to JSON format
+        
+        Args:
+            filename: Output filename (optional)
+            
+        Returns:
+            Report dictionary
+        """
+        report = {
+            'generated_at': datetime.now().isoformat(),
+            **self.report_data
+        }
+        
+        if filename:
+            import json
+            filepath = os.path.join(self.output_dir, filename)
+            with open(filepath, 'w') as f:
+                json.dump(report, f, indent=2, default=str)
+            logger.info(f"JSON report saved to {filepath}")
+        
+        return report
+    
+    def generate_full_report(self,
+                            predictions_df: pd.DataFrame,
+                            y_true: np.ndarray = None,
+                            y_pred: np.ndarray = None,
+                            model_name: str = 'Model',
+                            export_formats: List[str] = None) -> Dict:
+        """
+        Generate comprehensive report with all sections
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            y_true: True RUL values (optional)
+            y_pred: Predicted RUL values (optional)
+            model_name: Model name
+            export_formats: List of formats to export ('markdown', 'json')
+            
+        Returns:
+            Complete report dictionary
+        """
+        logger.info("Generating comprehensive report...")
+        
+        # Generate all sections
+        self.generate_fleet_summary(predictions_df)
+        self.generate_engine_details(predictions_df)
+        
+        if y_true is not None and y_pred is not None:
+            self.generate_model_performance(y_true, y_pred, model_name)
+        
+        # Export if requested
+        if export_formats:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            if 'markdown' in export_formats:
+                self.export_markdown(f'report_{timestamp}.md')
+            if 'json' in export_formats:
+                self.export_json(f'report_{timestamp}.json')
+        
+        logger.info("Comprehensive report generated")
+        return self.report_data
 
 
 if __name__ == "__main__":
