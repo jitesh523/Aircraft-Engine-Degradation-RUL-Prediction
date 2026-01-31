@@ -357,6 +357,262 @@ async def get_model_info():
     }
 
 
+class APIRequestLogger:
+    """
+    Comprehensive API request logging and analytics
+    Tracks predictions, performance, and usage patterns
+    """
+    
+    def __init__(self, log_dir: str = None):
+        """
+        Initialize API request logger
+        
+        Args:
+            log_dir: Directory for log files
+        """
+        import json
+        self.log_dir = log_dir or os.path.join(config.RESULTS_DIR, 'api_logs')
+        os.makedirs(self.log_dir, exist_ok=True)
+        
+        self.request_log = []
+        self.error_log = []
+        self.performance_metrics = {
+            'total_requests': 0,
+            'successful_requests': 0,
+            'failed_requests': 0,
+            'avg_response_time_ms': 0,
+            'total_engines_predicted': 0
+        }
+        
+        # Rate limiting
+        self.rate_limits = {
+            'requests_per_minute': 60,
+            'requests_per_hour': 1000
+        }
+        self.request_timestamps = []
+        
+        logger.info(f"Initialized APIRequestLogger (log_dir: {self.log_dir})")
+    
+    def log_request(self,
+                    endpoint: str,
+                    method: str,
+                    request_data: Dict,
+                    response_time_ms: float,
+                    success: bool,
+                    response_data: Dict = None,
+                    error: str = None):
+        """
+        Log an API request
+        
+        Args:
+            endpoint: API endpoint called
+            method: HTTP method
+            request_data: Request payload
+            response_time_ms: Response time in milliseconds
+            success: Whether request succeeded
+            response_data: Response data (optional)
+            error: Error message if failed (optional)
+        """
+        import time
+        
+        timestamp = datetime.now()
+        
+        log_entry = {
+            'timestamp': timestamp.isoformat(),
+            'endpoint': endpoint,
+            'method': method,
+            'response_time_ms': response_time_ms,
+            'success': success,
+            'engines_count': len(request_data.get('engines', [])) if request_data else 0
+        }
+        
+        self.request_log.append(log_entry)
+        self.request_timestamps.append(time.time())
+        
+        # Update metrics
+        self.performance_metrics['total_requests'] += 1
+        
+        if success:
+            self.performance_metrics['successful_requests'] += 1
+            self.performance_metrics['total_engines_predicted'] += log_entry['engines_count']
+        else:
+            self.performance_metrics['failed_requests'] += 1
+            self.error_log.append({
+                'timestamp': timestamp.isoformat(),
+                'endpoint': endpoint,
+                'error': error
+            })
+        
+        # Update average response time
+        total = self.performance_metrics['total_requests']
+        old_avg = self.performance_metrics['avg_response_time_ms']
+        self.performance_metrics['avg_response_time_ms'] = (
+            (old_avg * (total - 1) + response_time_ms) / total
+        )
+    
+    def check_rate_limit(self, client_id: str = 'default') -> tuple:
+        """
+        Check if request should be rate limited
+        
+        Args:
+            client_id: Client identifier
+            
+        Returns:
+            (is_allowed, wait_seconds)
+        """
+        import time
+        
+        current_time = time.time()
+        
+        # Clean old timestamps
+        minute_ago = current_time - 60
+        hour_ago = current_time - 3600
+        
+        self.request_timestamps = [t for t in self.request_timestamps if t > hour_ago]
+        
+        # Check per-minute limit
+        recent_minute = [t for t in self.request_timestamps if t > minute_ago]
+        if len(recent_minute) >= self.rate_limits['requests_per_minute']:
+            wait_time = 60 - (current_time - recent_minute[0])
+            return False, wait_time
+        
+        # Check per-hour limit
+        if len(self.request_timestamps) >= self.rate_limits['requests_per_hour']:
+            wait_time = 3600 - (current_time - self.request_timestamps[0])
+            return False, wait_time
+        
+        return True, 0
+    
+    def get_analytics(self, time_period: str = 'all') -> Dict:
+        """
+        Get usage analytics
+        
+        Args:
+            time_period: 'hour', 'day', 'week', or 'all'
+            
+        Returns:
+            Analytics dictionary
+        """
+        if not self.request_log:
+            return {'status': 'no_data'}
+        
+        # Filter by time period
+        now = datetime.now()
+        
+        if time_period == 'hour':
+            cutoff = now.timestamp() - 3600
+        elif time_period == 'day':
+            cutoff = now.timestamp() - 86400
+        elif time_period == 'week':
+            cutoff = now.timestamp() - 604800
+        else:
+            cutoff = 0
+        
+        filtered_logs = [
+            log for log in self.request_log
+            if datetime.fromisoformat(log['timestamp']).timestamp() > cutoff
+        ]
+        
+        if not filtered_logs:
+            return {'status': 'no_data', 'time_period': time_period}
+        
+        # Calculate analytics
+        total = len(filtered_logs)
+        successful = sum(1 for log in filtered_logs if log['success'])
+        total_engines = sum(log['engines_count'] for log in filtered_logs)
+        avg_response = sum(log['response_time_ms'] for log in filtered_logs) / total
+        
+        # Response time distribution
+        response_times = [log['response_time_ms'] for log in filtered_logs]
+        
+        return {
+            'time_period': time_period,
+            'total_requests': total,
+            'successful_requests': successful,
+            'failed_requests': total - successful,
+            'success_rate': successful / total * 100,
+            'total_engines_predicted': total_engines,
+            'avg_engines_per_request': total_engines / total,
+            'response_time': {
+                'avg_ms': avg_response,
+                'min_ms': min(response_times),
+                'max_ms': max(response_times),
+                'p50_ms': sorted(response_times)[len(response_times)//2],
+                'p95_ms': sorted(response_times)[int(len(response_times)*0.95)] if len(response_times) > 20 else max(response_times)
+            },
+            'errors': len(self.error_log)
+        }
+    
+    def get_error_summary(self) -> Dict:
+        """Get summary of recent errors"""
+        if not self.error_log:
+            return {'total_errors': 0}
+        
+        # Group by error type
+        error_counts = {}
+        for error in self.error_log:
+            error_type = error.get('error', 'Unknown')[:50]
+            error_counts[error_type] = error_counts.get(error_type, 0) + 1
+        
+        return {
+            'total_errors': len(self.error_log),
+            'error_types': error_counts,
+            'recent_errors': self.error_log[-5:]
+        }
+    
+    def save_logs(self, filename: str = None):
+        """
+        Save logs to file
+        
+        Args:
+            filename: Output filename
+        """
+        import json
+        
+        if filename is None:
+            filename = f"api_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        filepath = os.path.join(self.log_dir, filename)
+        
+        data = {
+            'saved_at': datetime.now().isoformat(),
+            'performance_metrics': self.performance_metrics,
+            'request_log': self.request_log[-1000:],  # Keep last 1000
+            'error_log': self.error_log[-100:]  # Keep last 100
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+        
+        logger.info(f"Logs saved to {filepath}")
+        return filepath
+    
+    def generate_report(self) -> str:
+        """Generate formatted usage report"""
+        analytics = self.get_analytics('day')
+        errors = self.get_error_summary()
+        
+        lines = [
+            "=" * 60,
+            "API USAGE REPORT",
+            "=" * 60,
+            "",
+            f"Total Requests: {self.performance_metrics['total_requests']}",
+            f"Success Rate: {self.performance_metrics['successful_requests'] / max(1, self.performance_metrics['total_requests']) * 100:.1f}%",
+            f"Avg Response Time: {self.performance_metrics['avg_response_time_ms']:.1f}ms",
+            f"Total Engines Predicted: {self.performance_metrics['total_engines_predicted']}",
+            "",
+            "Last 24 Hours:",
+            f"  Requests: {analytics.get('total_requests', 0)}",
+            f"  Engines Predicted: {analytics.get('total_engines_predicted', 0)}",
+            "",
+            f"Errors: {errors['total_errors']}",
+            "=" * 60
+        ]
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     import uvicorn
     
