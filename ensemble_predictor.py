@@ -253,6 +253,276 @@ class EnsemblePredictor:
         return pd.DataFrame(contributions)
 
 
+class AdaptiveEnsembleOptimizer:
+    """
+    Dynamic ensemble weight optimization
+    Adjusts weights based on recent performance and RUL ranges
+    """
+    
+    def __init__(self):
+        """Initialize adaptive ensemble optimizer"""
+        self.global_weights = {}
+        self.range_weights = {}  # Weights optimized per RUL range
+        self.performance_history = []
+        self.rul_ranges = [
+            (0, 30, 'critical'),
+            (30, 80, 'warning'),
+            (80, 150, 'healthy'),
+            (150, float('inf'), 'new')
+        ]
+        logger.info("Initialized AdaptiveEnsembleOptimizer")
+    
+    def optimize_per_range(self,
+                          predictions_dict: Dict[str, np.ndarray],
+                          y_true: np.ndarray) -> Dict:
+        """
+        Optimize weights for each RUL range separately
+        
+        Different models may perform better at different RUL ranges
+        
+        Args:
+            predictions_dict: Dictionary of model predictions
+            y_true: True RUL values
+            
+        Returns:
+            Dictionary with per-range optimized weights
+        """
+        from sklearn.metrics import mean_squared_error
+        
+        logger.info("Optimizing weights per RUL range...")
+        
+        model_names = list(predictions_dict.keys())
+        self.range_weights = {}
+        
+        for low, high, range_name in self.rul_ranges:
+            # Get samples in this range
+            mask = (y_true >= low) & (y_true < high)
+            n_samples = mask.sum()
+            
+            if n_samples < 10:
+                # Not enough samples, use equal weights
+                self.range_weights[range_name] = {name: 1.0/len(model_names) for name in model_names}
+                continue
+            
+            y_range = y_true[mask]
+            
+            # Evaluate each model in this range
+            model_rmses = {}
+            for name, preds in predictions_dict.items():
+                preds_range = preds[mask]
+                rmse = np.sqrt(mean_squared_error(y_range, preds_range))
+                model_rmses[name] = rmse
+            
+            # Calculate inverse RMSE weights (lower RMSE = higher weight)
+            total_inv_rmse = sum(1.0 / rmse for rmse in model_rmses.values())
+            weights = {name: (1.0 / rmse) / total_inv_rmse for name, rmse in model_rmses.items()}
+            
+            self.range_weights[range_name] = weights
+            
+            logger.info(f"  {range_name} range ({low}-{high}): "
+                       f"{n_samples} samples, best={min(model_rmses, key=model_rmses.get)}")
+        
+        return self.range_weights
+    
+    def predict_adaptive(self,
+                        predictions_dict: Dict[str, np.ndarray],
+                        reference_rul: np.ndarray = None) -> np.ndarray:
+        """
+        Make predictions using range-specific weights
+        
+        Args:
+            predictions_dict: Dictionary of model predictions
+            reference_rul: Reference RUL values for range selection (optional)
+            
+        Returns:
+            Adaptive ensemble predictions
+        """
+        if not self.range_weights:
+            # Fall back to equal weights
+            return np.mean(list(predictions_dict.values()), axis=0)
+        
+        n_samples = len(list(predictions_dict.values())[0])
+        ensemble_pred = np.zeros(n_samples)
+        
+        # If we have reference RUL, use adaptive per-sample weights
+        if reference_rul is not None:
+            for i in range(n_samples):
+                rul_ref = reference_rul[i]
+                
+                # Find appropriate range
+                range_name = 'new'
+                for low, high, name in self.rul_ranges:
+                    if low <= rul_ref < high:
+                        range_name = name
+                        break
+                
+                weights = self.range_weights.get(range_name, {})
+                
+                # Calculate weighted prediction
+                pred = 0
+                for model_name, model_preds in predictions_dict.items():
+                    weight = weights.get(model_name, 1.0/len(predictions_dict))
+                    pred += weight * model_preds[i]
+                
+                ensemble_pred[i] = pred
+        else:
+            # Use global average weights
+            avg_weights = self._calculate_average_weights()
+            for model_name, model_preds in predictions_dict.items():
+                weight = avg_weights.get(model_name, 1.0/len(predictions_dict))
+                ensemble_pred += weight * model_preds
+        
+        return np.maximum(ensemble_pred, 0)
+    
+    def _calculate_average_weights(self) -> Dict[str, float]:
+        """Calculate average weights across all ranges"""
+        if not self.range_weights:
+            return {}
+        
+        all_models = set()
+        for weights in self.range_weights.values():
+            all_models.update(weights.keys())
+        
+        avg_weights = {}
+        for model in all_models:
+            weights_list = [w.get(model, 0) for w in self.range_weights.values()]
+            avg_weights[model] = np.mean(weights_list)
+        
+        # Normalize
+        total = sum(avg_weights.values())
+        if total > 0:
+            avg_weights = {k: v/total for k, v in avg_weights.items()}
+        
+        return avg_weights
+    
+    def analyze_model_diversity(self,
+                                predictions_dict: Dict[str, np.ndarray]) -> Dict:
+        """
+        Analyze diversity among ensemble models
+        
+        Diverse models typically produce better ensembles
+        
+        Args:
+            predictions_dict: Dictionary of model predictions
+            
+        Returns:
+            Diversity analysis results
+        """
+        logger.info("Analyzing model diversity...")
+        
+        model_names = list(predictions_dict.keys())
+        preds_array = np.array(list(predictions_dict.values()))
+        
+        # Calculate pairwise correlations
+        correlations = {}
+        for i, name1 in enumerate(model_names):
+            for j, name2 in enumerate(model_names):
+                if i < j:
+                    corr = np.corrcoef(preds_array[i], preds_array[j])[0, 1]
+                    correlations[(name1, name2)] = float(corr)
+        
+        # Average correlation
+        avg_correlation = np.mean(list(correlations.values())) if correlations else 1.0
+        
+        # Prediction variance (higher = more diverse)
+        prediction_std = np.mean(np.std(preds_array, axis=0))
+        
+        # Disagreement rate (how often models differ by >10 cycles)
+        disagreements = 0
+        total_pairs = 0
+        for i in range(len(model_names)):
+            for j in range(i+1, len(model_names)):
+                diff = np.abs(preds_array[i] - preds_array[j])
+                disagreements += (diff > 10).sum()
+                total_pairs += len(diff)
+        
+        disagreement_rate = disagreements / total_pairs if total_pairs > 0 else 0
+        
+        # Diversity score (0-100)
+        diversity_score = (1 - avg_correlation) * 50 + disagreement_rate * 50
+        
+        result = {
+            'pairwise_correlations': correlations,
+            'average_correlation': float(avg_correlation),
+            'prediction_variance': float(prediction_std),
+            'disagreement_rate': float(disagreement_rate),
+            'diversity_score': float(diversity_score),
+            'diversity_level': 'High' if diversity_score > 40 else 
+                              'Medium' if diversity_score > 20 else 'Low'
+        }
+        
+        logger.info(f"Model diversity score: {diversity_score:.1f} ({result['diversity_level']})")
+        
+        return result
+    
+    def update_weights_on_feedback(self,
+                                   predictions_dict: Dict[str, np.ndarray],
+                                   y_true: np.ndarray,
+                                   learning_rate: float = 0.1):
+        """
+        Update weights based on recent prediction performance
+        
+        Args:
+            predictions_dict: New predictions
+            y_true: Actual RUL values
+            learning_rate: How quickly to adapt (0-1)
+        """
+        from sklearn.metrics import mean_squared_error
+        
+        logger.info("Updating weights based on feedback...")
+        
+        # Calculate current performance
+        model_rmses = {}
+        for name, preds in predictions_dict.items():
+            rmse = np.sqrt(mean_squared_error(y_true, preds))
+            model_rmses[name] = rmse
+        
+        # Calculate new weights based on inverse RMSE
+        total_inv_rmse = sum(1.0 / rmse for rmse in model_rmses.values())
+        new_weights = {name: (1.0 / rmse) / total_inv_rmse for name, rmse in model_rmses.items()}
+        
+        # Blend with existing weights
+        if self.global_weights:
+            for name in new_weights:
+                if name in self.global_weights:
+                    self.global_weights[name] = (
+                        (1 - learning_rate) * self.global_weights[name] +
+                        learning_rate * new_weights[name]
+                    )
+                else:
+                    self.global_weights[name] = new_weights[name]
+        else:
+            self.global_weights = new_weights
+        
+        # Normalize
+        total = sum(self.global_weights.values())
+        self.global_weights = {k: v/total for k, v in self.global_weights.items()}
+        
+        # Record performance
+        self.performance_history.append({
+            'model_rmses': model_rmses,
+            'weights_used': self.global_weights.copy(),
+            'n_samples': len(y_true)
+        })
+        
+        logger.info(f"Updated weights: {self.global_weights}")
+    
+    def get_optimization_report(self) -> Dict:
+        """
+        Generate report on optimization status
+        
+        Returns:
+            Dictionary with optimization statistics
+        """
+        return {
+            'global_weights': self.global_weights,
+            'range_specific_weights': self.range_weights,
+            'updates_performed': len(self.performance_history),
+            'rul_ranges_configured': [f"{low}-{high} ({name})" 
+                                      for low, high, name in self.rul_ranges]
+        }
+
+
 if __name__ == "__main__":
     # Test ensemble predictor
     print("="*60)
