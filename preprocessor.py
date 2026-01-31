@@ -289,6 +289,312 @@ def preprocess_data(train_df: pd.DataFrame,
 Preprocessor = CMAPSSPreprocessor
 
 
+class DataPipelineValidator:
+    """
+    Validates the entire preprocessing pipeline
+    Checks for data integrity, leakage, and correctness
+    """
+    
+    def __init__(self):
+        """Initialize pipeline validator"""
+        self.validation_results = {}
+        logger.info("Initialized DataPipelineValidator")
+    
+    def validate_data_flow(self,
+                          raw_train: pd.DataFrame,
+                          processed_train: pd.DataFrame) -> Dict:
+        """
+        Validate data flow from raw to processed
+        
+        Args:
+            raw_train: Raw training data
+            processed_train: Processed training data
+            
+        Returns:
+            Dictionary with validation results
+        """
+        logger.info("Validating data flow integrity...")
+        
+        issues = []
+        
+        # Check row count consistency
+        raw_count = len(raw_train)
+        processed_count = len(processed_train)
+        
+        if processed_count > raw_count:
+            issues.append(f"Data expansion detected: {raw_count} -> {processed_count} rows")
+        
+        # Check unit_id preservation
+        raw_units = set(raw_train['unit_id'].unique())
+        processed_units = set(processed_train['unit_id'].unique())
+        
+        if raw_units != processed_units:
+            missing = raw_units - processed_units
+            if missing:
+                issues.append(f"Missing units after processing: {missing}")
+        
+        # Check for unexpected NaN introduction
+        raw_nan_count = raw_train.isnull().sum().sum()
+        processed_nan_count = processed_train.isnull().sum().sum()
+        
+        if processed_nan_count > raw_nan_count:
+            new_nans = processed_nan_count - raw_nan_count
+            issues.append(f"New NaN values introduced: {new_nans}")
+        
+        result = {
+            'valid': len(issues) == 0,
+            'raw_rows': raw_count,
+            'processed_rows': processed_count,
+            'issues': issues
+        }
+        
+        self.validation_results['data_flow'] = result
+        logger.info(f"Data flow validation: {'PASSED' if result['valid'] else 'FAILED'}")
+        
+        return result
+    
+    def check_data_leakage(self,
+                          train_df: pd.DataFrame,
+                          val_df: pd.DataFrame,
+                          test_df: pd.DataFrame = None) -> Dict:
+        """
+        Check for data leakage between splits
+        
+        Args:
+            train_df: Training data
+            val_df: Validation data
+            test_df: Test data (optional)
+            
+        Returns:
+            Dictionary with leakage check results
+        """
+        logger.info("Checking for data leakage...")
+        
+        issues = []
+        
+        # Check engine overlap between train and validation
+        train_units = set(train_df['unit_id'].unique())
+        val_units = set(val_df['unit_id'].unique())
+        
+        overlap = train_units & val_units
+        if overlap:
+            issues.append(f"Train/Val engine overlap: {len(overlap)} engines")
+        
+        # Check for identical rows
+        train_hashes = set(train_df.drop(columns=['unit_id'], errors='ignore').apply(tuple, axis=1))
+        val_hashes = set(val_df.drop(columns=['unit_id'], errors='ignore').apply(tuple, axis=1))
+        
+        row_overlap = len(train_hashes & val_hashes)
+        if row_overlap > 0:
+            issues.append(f"Identical rows in train/val: {row_overlap}")
+        
+        # Check test data if provided
+        if test_df is not None:
+            test_units = set(test_df['unit_id'].unique()) if 'unit_id' in test_df.columns else set()
+            test_train_overlap = train_units & test_units
+            if test_train_overlap:
+                issues.append(f"Train/Test engine overlap: {len(test_train_overlap)} engines")
+        
+        # Check for temporal leakage in RUL
+        if 'RUL' in train_df.columns and 'time_cycles' in train_df.columns:
+            # RUL should decrease with increasing time_cycles
+            for unit_id in list(train_units)[:5]:  # Sample 5 engines
+                unit_data = train_df[train_df['unit_id'] == unit_id].sort_values('time_cycles')
+                rul_diffs = unit_data['RUL'].diff().dropna()
+                
+                if (rul_diffs > 0).any():
+                    issues.append(f"RUL increases detected in unit {unit_id} (possible temporal leakage)")
+                    break
+        
+        result = {
+            'valid': len(issues) == 0,
+            'train_engines': len(train_units),
+            'val_engines': len(val_units),
+            'issues': issues
+        }
+        
+        self.validation_results['leakage'] = result
+        logger.info(f"Leakage check: {'PASSED' if result['valid'] else 'FAILED'}")
+        
+        return result
+    
+    def validate_rul_labels(self, df: pd.DataFrame) -> Dict:
+        """
+        Validate RUL labels are correctly generated
+        
+        Args:
+            df: DataFrame with RUL column
+            
+        Returns:
+            Dictionary with RUL validation results
+        """
+        logger.info("Validating RUL labels...")
+        
+        issues = []
+        
+        if 'RUL' not in df.columns:
+            return {'valid': False, 'issues': ['RUL column not found']}
+        
+        # Check for negative RUL
+        negative_rul = (df['RUL'] < 0).sum()
+        if negative_rul > 0:
+            issues.append(f"Negative RUL values found: {negative_rul}")
+        
+        # Check RUL ends at 0 for each engine
+        for unit_id in df['unit_id'].unique():
+            unit_data = df[df['unit_id'] == unit_id].sort_values('time_cycles')
+            final_rul = unit_data['RUL'].iloc[-1]
+            
+            if final_rul != 0:
+                issues.append(f"Unit {unit_id}: Final RUL is {final_rul}, expected 0")
+                if len(issues) > 5:  # Limit number of issues reported
+                    issues.append("... and more units with incorrect final RUL")
+                    break
+        
+        # Check RUL is monotonically decreasing
+        sample_units = list(df['unit_id'].unique())[:10]
+        for unit_id in sample_units:
+            unit_data = df[df['unit_id'] == unit_id].sort_values('time_cycles')
+            rul_diffs = unit_data['RUL'].diff().dropna()
+            
+            if (rul_diffs > 0).any():
+                issues.append(f"Unit {unit_id}: RUL not monotonically decreasing")
+                break
+        
+        # Check RUL range
+        max_rul = df['RUL'].max()
+        if max_rul > 500:  # Unusually high RUL
+            issues.append(f"Unusually high max RUL: {max_rul}")
+        
+        result = {
+            'valid': len(issues) == 0,
+            'min_rul': int(df['RUL'].min()),
+            'max_rul': int(df['RUL'].max()),
+            'mean_rul': float(df['RUL'].mean()),
+            'issues': issues
+        }
+        
+        self.validation_results['rul_labels'] = result
+        logger.info(f"RUL validation: {'PASSED' if result['valid'] else 'FAILED'}")
+        
+        return result
+    
+    def validate_scaling(self,
+                        original_df: pd.DataFrame,
+                        scaled_df: pd.DataFrame,
+                        scaler,
+                        feature_cols: List[str]) -> Dict:
+        """
+        Validate scaling is reversible
+        
+        Args:
+            original_df: Original unscaled DataFrame
+            scaled_df: Scaled DataFrame
+            scaler: Fitted scaler object
+            feature_cols: List of feature columns
+            
+        Returns:
+            Dictionary with scaling validation results
+        """
+        logger.info("Validating scaling reversibility...")
+        
+        issues = []
+        
+        # Check scaled values are in expected range
+        scaled_min = scaled_df[feature_cols].min().min()
+        scaled_max = scaled_df[feature_cols].max().max()
+        
+        if hasattr(scaler, 'feature_range'):  # MinMaxScaler
+            expected_min, expected_max = scaler.feature_range
+            if scaled_min < expected_min - 0.01 or scaled_max > expected_max + 0.01:
+                issues.append(f"Scaled values outside expected range: [{scaled_min:.2f}, {scaled_max:.2f}]")
+        
+        # Check reversibility
+        try:
+            unscaled = scaler.inverse_transform(scaled_df[feature_cols])
+            original_values = original_df[feature_cols].values
+            
+            # Allow small floating point differences
+            max_diff = np.max(np.abs(unscaled - original_values))
+            if max_diff > 1e-6:
+                issues.append(f"Scaling not perfectly reversible: max diff = {max_diff:.2e}")
+        except Exception as e:
+            issues.append(f"Could not verify reversibility: {e}")
+        
+        result = {
+            'valid': len(issues) == 0,
+            'scaled_range': (float(scaled_min), float(scaled_max)),
+            'issues': issues
+        }
+        
+        self.validation_results['scaling'] = result
+        logger.info(f"Scaling validation: {'PASSED' if result['valid'] else 'FAILED'}")
+        
+        return result
+    
+    def run_full_validation(self,
+                           raw_train: pd.DataFrame,
+                           processed_train: pd.DataFrame,
+                           train_split: pd.DataFrame,
+                           val_split: pd.DataFrame,
+                           scaler = None,
+                           feature_cols: List[str] = None) -> Dict:
+        """
+        Run complete pipeline validation
+        
+        Args:
+            raw_train: Raw training data
+            processed_train: Processed training data (with RUL)
+            train_split: Training split
+            val_split: Validation split
+            scaler: Fitted scaler (optional)
+            feature_cols: Feature columns (optional)
+            
+        Returns:
+            Complete validation report
+        """
+        logger.info("Running full pipeline validation...")
+        
+        # Data flow validation
+        self.validate_data_flow(raw_train, processed_train)
+        
+        # Leakage check
+        self.validate_data_flow(raw_train, processed_train)
+        self.check_data_leakage(train_split, val_split)
+        
+        # RUL validation
+        if 'RUL' in processed_train.columns:
+            self.validate_rul_labels(processed_train)
+        
+        # Scaling validation
+        if scaler is not None and feature_cols is not None:
+            self.validate_scaling(processed_train, train_split, scaler, feature_cols)
+        
+        # Overall result
+        all_valid = all(v.get('valid', True) for v in self.validation_results.values())
+        
+        return {
+            'overall_valid': all_valid,
+            'checks': self.validation_results
+        }
+    
+    def print_report(self):
+        """Print formatted validation report"""
+        print("\n" + "="*60)
+        print("DATA PIPELINE VALIDATION REPORT")
+        print("="*60)
+        
+        for check_name, result in self.validation_results.items():
+            status = "✅ PASSED" if result.get('valid', False) else "❌ FAILED"
+            print(f"\n{check_name.upper()}: {status}")
+            
+            if result.get('issues'):
+                for issue in result['issues']:
+                    print(f"  ⚠️  {issue}")
+        
+        print("\n" + "="*60)
+
+
 if __name__ == "__main__":
     # Test the preprocessor
     from data_loader import load_dataset
