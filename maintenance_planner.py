@@ -513,6 +513,310 @@ class EarlyWarningSystem:
         return queue
 
 
+class FleetHealthManager:
+    """
+    Fleet-wide health monitoring and resource allocation
+    Aggregates engine health across entire fleet for strategic planning
+    """
+    
+    def __init__(self):
+        """Initialize fleet health manager"""
+        self.thresholds = config.MAINTENANCE_THRESHOLDS
+        self.fleet_status = {}
+        self.resource_pool = {
+            'mechanics': 10,
+            'maintenance_bays': 5,
+            'spare_parts_inventory': 100
+        }
+        logger.info("Initialized FleetHealthManager")
+    
+    def aggregate_fleet_health(self, predictions_df: pd.DataFrame) -> Dict:
+        """
+        Aggregate health status across entire fleet
+        
+        Args:
+            predictions_df: DataFrame with unit_id and RUL_pred columns
+            
+        Returns:
+            Dictionary with fleet health aggregation
+        """
+        logger.info("Aggregating fleet health status...")
+        
+        # Get latest RUL for each engine
+        if 'time_cycles' in predictions_df.columns:
+            latest = predictions_df.groupby('unit_id').last().reset_index()
+        else:
+            latest = predictions_df
+        
+        # Classify engines
+        def classify(rul):
+            if rul < self.thresholds['critical']:
+                return 'Critical'
+            elif rul < self.thresholds['warning']:
+                return 'Warning'
+            else:
+                return 'Healthy'
+        
+        latest['status'] = latest['RUL_pred'].apply(classify)
+        
+        # Count by status
+        status_counts = latest['status'].value_counts().to_dict()
+        
+        # Calculate fleet metrics
+        total_engines = len(latest)
+        avg_rul = latest['RUL_pred'].mean()
+        min_rul = latest['RUL_pred'].min()
+        
+        # Risk score (0-100)
+        critical_pct = status_counts.get('Critical', 0) / total_engines * 100
+        warning_pct = status_counts.get('Warning', 0) / total_engines * 100
+        fleet_risk_score = critical_pct * 2 + warning_pct * 0.5
+        
+        self.fleet_status = {
+            'total_engines': total_engines,
+            'status_distribution': status_counts,
+            'average_rul': float(avg_rul),
+            'minimum_rul': float(min_rul),
+            'fleet_risk_score': float(min(100, fleet_risk_score)),
+            'overall_health': 'Critical' if fleet_risk_score > 50 else 
+                             'Warning' if fleet_risk_score > 20 else 'Healthy'
+        }
+        
+        logger.info(f"Fleet health: {self.fleet_status['overall_health']} "
+                   f"(risk score: {self.fleet_status['fleet_risk_score']:.1f})")
+        
+        return self.fleet_status
+    
+    def rank_engines_by_risk(self,
+                            predictions_df: pd.DataFrame,
+                            include_factors: List[str] = None) -> pd.DataFrame:
+        """
+        Rank engines by maintenance priority
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            include_factors: Additional factors to consider
+            
+        Returns:
+            DataFrame with engines ranked by risk
+        """
+        logger.info("Ranking engines by risk priority...")
+        
+        # Get latest RUL for each engine
+        if 'time_cycles' in predictions_df.columns:
+            df = predictions_df.groupby('unit_id').last().reset_index()
+        else:
+            df = predictions_df.copy()
+        
+        # Base risk from RUL
+        max_rul = df['RUL_pred'].max()
+        df['rul_risk'] = (1 - df['RUL_pred'] / max_rul) * 100
+        
+        # Calculate degradation rate if history available
+        if 'time_cycles' in predictions_df.columns:
+            degradation_rates = []
+            for unit_id in df['unit_id']:
+                unit_data = predictions_df[predictions_df['unit_id'] == unit_id]['RUL_pred'].values
+                if len(unit_data) >= 2:
+                    rate = (unit_data[0] - unit_data[-1]) / len(unit_data)
+                    degradation_rates.append(rate)
+                else:
+                    degradation_rates.append(0)
+            df['degradation_rate'] = degradation_rates
+            df['degradation_risk'] = (df['degradation_rate'] / df['degradation_rate'].max()) * 50
+        else:
+            df['degradation_risk'] = 0
+        
+        # Combined risk score
+        df['total_risk_score'] = df['rul_risk'] + df['degradation_risk']
+        
+        # Priority ranking
+        df = df.sort_values('total_risk_score', ascending=False)
+        df['priority_rank'] = range(1, len(df) + 1)
+        
+        # Add urgency labels
+        def get_urgency(score):
+            if score > 80:
+                return 'IMMEDIATE'
+            elif score > 60:
+                return 'HIGH'
+            elif score > 40:
+                return 'MEDIUM'
+            else:
+                return 'LOW'
+        
+        df['urgency'] = df['total_risk_score'].apply(get_urgency)
+        
+        return df[['unit_id', 'RUL_pred', 'total_risk_score', 'priority_rank', 'urgency']]
+    
+    def allocate_resources(self,
+                          ranked_engines: pd.DataFrame,
+                          available_resources: Dict = None) -> Dict:
+        """
+        Allocate maintenance resources based on priorities
+        
+        Args:
+            ranked_engines: DataFrame with priority-ranked engines
+            available_resources: Dict of available resources
+            
+        Returns:
+            Resource allocation plan
+        """
+        logger.info("Allocating maintenance resources...")
+        
+        resources = available_resources or self.resource_pool
+        
+        allocation = {
+            'immediate_maintenance': [],
+            'scheduled_maintenance': [],
+            'monitoring_only': [],
+            'resource_utilization': {}
+        }
+        
+        mechanics_available = resources.get('mechanics', 10)
+        bays_available = resources.get('maintenance_bays', 5)
+        
+        # Allocate resources by priority
+        mechanics_used = 0
+        bays_used = 0
+        
+        for _, row in ranked_engines.iterrows():
+            engine_id = row['unit_id']
+            urgency = row['urgency']
+            
+            if urgency == 'IMMEDIATE':
+                if mechanics_used < mechanics_available and bays_used < bays_available:
+                    allocation['immediate_maintenance'].append({
+                        'engine_id': engine_id,
+                        'rul': row['RUL_pred'],
+                        'assigned_mechanics': 2,
+                        'estimated_hours': 8
+                    })
+                    mechanics_used += 2
+                    bays_used += 1
+            elif urgency == 'HIGH':
+                if mechanics_used < mechanics_available:
+                    allocation['scheduled_maintenance'].append({
+                        'engine_id': engine_id,
+                        'rul': row['RUL_pred'],
+                        'schedule_within_days': 3,
+                        'assigned_mechanics': 1
+                    })
+                    mechanics_used += 1
+            else:
+                allocation['monitoring_only'].append(engine_id)
+        
+        allocation['resource_utilization'] = {
+            'mechanics_assigned': mechanics_used,
+            'mechanics_available': mechanics_available,
+            'utilization_rate': mechanics_used / mechanics_available * 100 if mechanics_available > 0 else 0,
+            'bays_in_use': bays_used,
+            'bays_available': bays_available
+        }
+        
+        logger.info(f"Resource utilization: {allocation['resource_utilization']['utilization_rate']:.1f}%")
+        
+        return allocation
+    
+    def optimize_maintenance_schedule(self,
+                                      predictions_df: pd.DataFrame,
+                                      planning_horizon_days: int = 30) -> Dict:
+        """
+        Optimize maintenance schedule across planning horizon
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            planning_horizon_days: Number of days to plan ahead
+            
+        Returns:
+            Optimized maintenance schedule
+        """
+        logger.info(f"Optimizing maintenance schedule for {planning_horizon_days} days...")
+        
+        # Rank engines
+        ranked = self.rank_engines_by_risk(predictions_df)
+        
+        # Allocate resources
+        allocation = self.allocate_resources(ranked)
+        
+        # Create daily schedule
+        daily_schedule = {}
+        immediate = allocation['immediate_maintenance']
+        scheduled = allocation['scheduled_maintenance']
+        
+        # Day 1: Immediate maintenance
+        if immediate:
+            daily_schedule[1] = {
+                'maintenance_count': len(immediate),
+                'engines': [m['engine_id'] for m in immediate],
+                'total_hours': sum(m['estimated_hours'] for m in immediate)
+            }
+        
+        # Spread scheduled maintenance across days
+        for i, maint in enumerate(scheduled):
+            day = min(maint['schedule_within_days'], planning_horizon_days)
+            if day not in daily_schedule:
+                daily_schedule[day] = {'maintenance_count': 0, 'engines': [], 'total_hours': 0}
+            daily_schedule[day]['maintenance_count'] += 1
+            daily_schedule[day]['engines'].append(maint['engine_id'])
+            daily_schedule[day]['total_hours'] += 4  # Estimated hours
+        
+        return {
+            'planning_horizon_days': planning_horizon_days,
+            'total_engines_to_maintain': len(immediate) + len(scheduled),
+            'daily_schedule': daily_schedule,
+            'resource_allocation': allocation['resource_utilization']
+        }
+    
+    def generate_fleet_report(self, predictions_df: pd.DataFrame) -> str:
+        """
+        Generate comprehensive fleet health report
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            
+        Returns:
+            Formatted report string
+        """
+        # Aggregate health
+        health = self.aggregate_fleet_health(predictions_df)
+        ranked = self.rank_engines_by_risk(predictions_df)
+        
+        lines = [
+            "=" * 60,
+            "FLEET HEALTH STATUS REPORT",
+            "=" * 60,
+            "",
+            f"Total Engines: {health['total_engines']}",
+            f"Fleet Health: {health['overall_health']}",
+            f"Risk Score: {health['fleet_risk_score']:.1f}/100",
+            "",
+            "Status Distribution:",
+        ]
+        
+        for status, count in health['status_distribution'].items():
+            pct = count / health['total_engines'] * 100
+            lines.append(f"  • {status}: {count} ({pct:.1f}%)")
+        
+        lines.extend([
+            "",
+            f"Average RUL: {health['average_rul']:.1f} cycles",
+            f"Minimum RUL: {health['minimum_rul']:.1f} cycles",
+            "",
+            "Top 5 Priority Engines:"
+        ])
+        
+        for _, row in ranked.head(5).iterrows():
+            lines.append(
+                f"  {row['priority_rank']}. Engine {row['unit_id']}: "
+                f"RUL={row['RUL_pred']:.0f}, Urgency={row['urgency']}"
+            )
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test maintenance planner
     print("="*60)
