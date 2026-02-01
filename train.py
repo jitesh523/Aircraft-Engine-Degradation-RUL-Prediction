@@ -266,6 +266,287 @@ def main(dataset_name='FD001', skip_baseline=False, skip_lstm=False, skip_anomal
     logger.info("="*80)
 
 
+class AutoRetrainer:
+    """
+    Automated retraining pipeline for RUL prediction models
+    Evaluates retraining need and executes retraining workflow
+    """
+    
+    def __init__(self,
+                 performance_threshold: float = 0.15,
+                 drift_threshold: float = 0.2):
+        """
+        Initialize auto retrainer
+        
+        Args:
+            performance_threshold: Performance degradation threshold (fraction)
+            drift_threshold: Data drift threshold for triggering retraining
+        """
+        self.performance_threshold = performance_threshold
+        self.drift_threshold = drift_threshold
+        self.retraining_history = []
+        self.baseline_metrics = None
+        logger.info(f"Initialized AutoRetrainer (perf_threshold={performance_threshold})")
+    
+    def set_baseline_metrics(self, metrics: Dict):
+        """
+        Set baseline performance metrics
+        
+        Args:
+            metrics: Dictionary with baseline model metrics
+        """
+        self.baseline_metrics = metrics
+        logger.info(f"Baseline metrics set: {metrics}")
+    
+    def evaluate_retraining_need(self,
+                                  current_metrics: Dict,
+                                  drift_report: Dict = None) -> Dict:
+        """
+        Evaluate if model retraining is needed
+        
+        Args:
+            current_metrics: Current model performance metrics
+            drift_report: Optional drift detection report
+            
+        Returns:
+            Retraining evaluation results
+        """
+        logger.info("Evaluating retraining need...")
+        
+        needs_retraining = False
+        reasons = []
+        
+        # Check performance degradation
+        if self.baseline_metrics:
+            baseline_rmse = self.baseline_metrics.get('RMSE', self.baseline_metrics.get('rmse', 0))
+            current_rmse = current_metrics.get('RMSE', current_metrics.get('rmse', 0))
+            
+            if baseline_rmse > 0:
+                degradation = (current_rmse - baseline_rmse) / baseline_rmse
+                
+                if degradation > self.performance_threshold:
+                    needs_retraining = True
+                    reasons.append(f"Performance degraded by {degradation*100:.1f}%")
+        
+        # Check drift
+        if drift_report:
+            drift_pct = drift_report.get('covariate_shift', {}).get('drift_percentage', 0)
+            if drift_pct > self.drift_threshold * 100:
+                needs_retraining = True
+                reasons.append(f"Data drift detected in {drift_pct:.1f}% of features")
+            
+            severity = drift_report.get('severity', {}).get('severity_level', 'none')
+            if severity in ['critical', 'high']:
+                needs_retraining = True
+                reasons.append(f"Drift severity: {severity}")
+        
+        result = {
+            'needs_retraining': needs_retraining,
+            'reasons': reasons,
+            'current_metrics': current_metrics,
+            'baseline_metrics': self.baseline_metrics,
+            'recommendation': 'retrain' if needs_retraining else 'continue_monitoring'
+        }
+        
+        if needs_retraining:
+            logger.warning(f"Retraining needed: {reasons}")
+        else:
+            logger.info("No retraining needed at this time")
+        
+        return result
+    
+    def prepare_training_data(self,
+                              existing_data: pd.DataFrame,
+                              new_data: pd.DataFrame,
+                              strategy: str = 'combine') -> pd.DataFrame:
+        """
+        Prepare training data for retraining
+        
+        Args:
+            existing_data: Existing training data
+            new_data: New incoming data
+            strategy: Data combination strategy ('combine', 'sliding_window', 'new_only')
+            
+        Returns:
+            Prepared training DataFrame
+        """
+        logger.info(f"Preparing training data (strategy: {strategy})...")
+        
+        if strategy == 'combine':
+            # Combine all data
+            combined = pd.concat([existing_data, new_data], ignore_index=True)
+            logger.info(f"Combined: {len(existing_data)} + {len(new_data)} = {len(combined)}")
+            return combined
+        
+        elif strategy == 'sliding_window':
+            # Use sliding window with recent data priority
+            max_samples = max(len(existing_data), 100000)
+            combined = pd.concat([existing_data, new_data], ignore_index=True)
+            
+            # Keep most recent samples
+            if len(combined) > max_samples:
+                combined = combined.tail(max_samples)
+            
+            logger.info(f"Sliding window: {len(combined)} samples")
+            return combined
+        
+        elif strategy == 'new_only':
+            # Use only new data (for major drift)
+            logger.info(f"New data only: {len(new_data)} samples")
+            return new_data
+        
+        else:
+            raise ValueError(f"Unknown strategy: {strategy}")
+    
+    def execute_retraining(self,
+                           training_data: pd.DataFrame,
+                           feature_cols: List[str],
+                           model_type: str = 'random_forest') -> Dict:
+        """
+        Execute model retraining
+        
+        Args:
+            training_data: Training DataFrame
+            feature_cols: Feature columns
+            model_type: Type of model to train
+            
+        Returns:
+            Retraining results
+        """
+        from sklearn.model_selection import train_test_split
+        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.linear_model import LinearRegression
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        
+        logger.info(f"Executing retraining for {model_type}...")
+        
+        start_time = datetime.now()
+        
+        # Prepare data
+        X = training_data[feature_cols].values
+        y = training_data['RUL'].values
+        
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
+        
+        # Train model
+        if model_type == 'random_forest':
+            model = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=15,
+                n_jobs=-1,
+                random_state=42
+            )
+        elif model_type == 'linear_regression':
+            model = LinearRegression()
+        else:
+            raise ValueError(f"Unknown model type: {model_type}")
+        
+        model.fit(X_train, y_train)
+        
+        # Evaluate
+        y_pred = model.predict(X_val)
+        metrics = {
+            'rmse': float(np.sqrt(mean_squared_error(y_val, y_pred))),
+            'mae': float(mean_absolute_error(y_val, y_pred)),
+            'r2': float(r2_score(y_val, y_pred))
+        }
+        
+        training_time = (datetime.now() - start_time).total_seconds()
+        
+        result = {
+            'model': model,
+            'model_type': model_type,
+            'metrics': metrics,
+            'training_samples': len(X_train),
+            'validation_samples': len(X_val),
+            'training_time_seconds': training_time,
+            'timestamp': datetime.now().isoformat()
+        }
+        
+        logger.info(f"Retraining complete: RMSE={metrics['rmse']:.2f}, R2={metrics['r2']:.4f}")
+        
+        return result
+    
+    def validate_new_model(self,
+                           new_metrics: Dict,
+                           old_metrics: Dict,
+                           improvement_threshold: float = 0.05) -> Dict:
+        """
+        Validate new model against old model performance
+        
+        Args:
+            new_metrics: New model metrics
+            old_metrics: Old model metrics
+            improvement_threshold: Minimum improvement required
+            
+        Returns:
+            Validation results
+        """
+        logger.info("Validating new model...")
+        
+        old_rmse = old_metrics.get('RMSE', old_metrics.get('rmse', float('inf')))
+        new_rmse = new_metrics.get('RMSE', new_metrics.get('rmse', float('inf')))
+        
+        improvement = (old_rmse - new_rmse) / old_rmse if old_rmse > 0 else 0
+        
+        is_improved = new_rmse < old_rmse
+        meets_threshold = improvement >= improvement_threshold
+        
+        result = {
+            'old_rmse': old_rmse,
+            'new_rmse': new_rmse,
+            'improvement_pct': improvement * 100,
+            'is_improved': is_improved,
+            'meets_threshold': meets_threshold,
+            'recommendation': 'deploy' if is_improved else 'keep_existing',
+            'details': []
+        }
+        
+        if is_improved:
+            if meets_threshold:
+                result['details'].append(f"New model improved by {improvement*100:.1f}%")
+            else:
+                result['details'].append(f"Marginal improvement ({improvement*100:.1f}%)")
+        else:
+            result['details'].append("New model performs worse than existing")
+        
+        logger.info(f"Validation: {'PASS' if is_improved else 'FAIL'} "
+                   f"(improvement: {improvement*100:.1f}%)")
+        
+        self.retraining_history.append({
+            'timestamp': datetime.now().isoformat(),
+            'validation_result': result
+        })
+        
+        return result
+    
+    def get_retraining_report(self) -> str:
+        """Generate formatted retraining report"""
+        lines = [
+            "=" * 60,
+            "AUTOMATED RETRAINING REPORT",
+            "=" * 60,
+            "",
+            f"Performance threshold: {self.performance_threshold*100:.0f}%",
+            f"Drift threshold: {self.drift_threshold*100:.0f}%",
+            f"Retraining history: {len(self.retraining_history)} events",
+            ""
+        ]
+        
+        if self.baseline_metrics:
+            lines.extend([
+                "Baseline Metrics:",
+                f"  RMSE: {self.baseline_metrics.get('rmse', self.baseline_metrics.get('RMSE', 'N/A'))}",
+                f"  R2: {self.baseline_metrics.get('r2', self.baseline_metrics.get('R2', 'N/A'))}",
+            ])
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train RUL prediction models')
     parser.add_argument('--dataset', type=str, default='FD001',
