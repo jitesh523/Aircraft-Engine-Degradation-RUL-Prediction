@@ -611,6 +611,242 @@ class PerformanceBenchmark:
             print("="*60)
 
 
+class CrossValidationPipeline:
+    """
+    Cross-validation pipeline for RUL prediction models
+    Supports engine-aware and time-series validation strategies
+    """
+    
+    def __init__(self, n_splits: int = 5):
+        """
+        Initialize cross-validation pipeline
+        
+        Args:
+            n_splits: Number of CV splits
+        """
+        self.n_splits = n_splits
+        self.cv_results = []
+        logger.info(f"Initialized CrossValidationPipeline (n_splits={n_splits})")
+    
+    def stratified_engine_cv(self,
+                             df: pd.DataFrame,
+                             feature_cols: List[str],
+                             target_col: str = 'RUL',
+                             model_fn: Callable = None) -> Dict:
+        """
+        Perform engine-aware cross-validation
+        
+        Ensures engines are not split across train/val sets
+        
+        Args:
+            df: DataFrame with unit_id column
+            feature_cols: Feature columns
+            target_col: Target column
+            model_fn: Function that returns trained model
+            
+        Returns:
+            Cross-validation results
+        """
+        from sklearn.model_selection import GroupKFold
+        from sklearn.ensemble import RandomForestRegressor
+        
+        logger.info("Performing stratified engine cross-validation...")
+        
+        # Get unique engines
+        engine_ids = df['unit_id'].unique()
+        groups = df['unit_id'].values
+        
+        # Prepare data
+        X = df[feature_cols].values
+        y = df[target_col].values
+        
+        # Create group-based CV
+        gkf = GroupKFold(n_splits=min(self.n_splits, len(engine_ids)))
+        
+        fold_results = []
+        
+        for fold, (train_idx, val_idx) in enumerate(gkf.split(X, y, groups)):
+            X_train, X_val = X[train_idx], X[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+            
+            # Get engine counts
+            train_engines = df.iloc[train_idx]['unit_id'].nunique()
+            val_engines = df.iloc[val_idx]['unit_id'].nunique()
+            
+            # Train model
+            if model_fn:
+                model = model_fn()
+            else:
+                model = RandomForestRegressor(n_estimators=50, max_depth=10, random_state=42)
+            
+            model.fit(X_train, y_train)
+            
+            # Predict and evaluate
+            y_pred = model.predict(X_val)
+            rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+            mae = mean_absolute_error(y_val, y_pred)
+            r2 = r2_score(y_val, y_pred)
+            
+            fold_results.append({
+                'fold': fold + 1,
+                'train_samples': len(train_idx),
+                'val_samples': len(val_idx),
+                'train_engines': train_engines,
+                'val_engines': val_engines,
+                'rmse': rmse,
+                'mae': mae,
+                'r2': r2
+            })
+            
+            logger.info(f"  Fold {fold+1}: RMSE={rmse:.2f}, Engines: train={train_engines}, val={val_engines}")
+        
+        # Aggregate results
+        cv_results = {
+            'strategy': 'stratified_engine',
+            'n_splits': len(fold_results),
+            'folds': fold_results,
+            'mean_rmse': float(np.mean([f['rmse'] for f in fold_results])),
+            'std_rmse': float(np.std([f['rmse'] for f in fold_results])),
+            'mean_mae': float(np.mean([f['mae'] for f in fold_results])),
+            'mean_r2': float(np.mean([f['r2'] for f in fold_results]))
+        }
+        
+        self.cv_results.append(cv_results)
+        
+        logger.info(f"Engine CV: RMSE = {cv_results['mean_rmse']:.2f} ± {cv_results['std_rmse']:.2f}")
+        
+        return cv_results
+    
+    def time_series_cv(self,
+                       df: pd.DataFrame,
+                       feature_cols: List[str],
+                       target_col: str = 'RUL',
+                       model_fn: Callable = None) -> Dict:
+        """
+        Time-respecting cross-validation
+        
+        Ensures training data always precedes validation data
+        
+        Args:
+            df: DataFrame sorted by time
+            feature_cols: Feature columns
+            target_col: Target column
+            model_fn: Function that returns trained model
+            
+        Returns:
+            Cross-validation results
+        """
+        from sklearn.ensemble import RandomForestRegressor
+        
+        logger.info("Performing time-series cross-validation...")
+        
+        X = df[feature_cols].values
+        y = df[target_col].values
+        
+        # Create time series splits
+        tscv = TimeSeriesSplit(n_splits=self.n_splits)
+        
+        fold_results = []
+        
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+            X_train, X_val = X[train_idx], X[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+            
+            # Train model
+            if model_fn:
+                model = model_fn()
+            else:
+                model = RandomForestRegressor(n_estimators=50, max_depth=10, random_state=42)
+            
+            model.fit(X_train, y_train)
+            
+            # Predict and evaluate
+            y_pred = model.predict(X_val)
+            rmse = np.sqrt(mean_squared_error(y_val, y_pred))
+            mae = mean_absolute_error(y_val, y_pred)
+            r2 = r2_score(y_val, y_pred)
+            
+            fold_results.append({
+                'fold': fold + 1,
+                'train_samples': len(train_idx),
+                'val_samples': len(val_idx),
+                'rmse': rmse,
+                'mae': mae,
+                'r2': r2
+            })
+            
+            logger.info(f"  Fold {fold+1}: RMSE={rmse:.2f}, Train={len(train_idx)}, Val={len(val_idx)}")
+        
+        # Aggregate results
+        cv_results = {
+            'strategy': 'time_series',
+            'n_splits': len(fold_results),
+            'folds': fold_results,
+            'mean_rmse': float(np.mean([f['rmse'] for f in fold_results])),
+            'std_rmse': float(np.std([f['rmse'] for f in fold_results])),
+            'mean_mae': float(np.mean([f['mae'] for f in fold_results])),
+            'mean_r2': float(np.mean([f['r2'] for f in fold_results]))
+        }
+        
+        self.cv_results.append(cv_results)
+        
+        logger.info(f"Time-series CV: RMSE = {cv_results['mean_rmse']:.2f} ± {cv_results['std_rmse']:.2f}")
+        
+        return cv_results
+    
+    def aggregate_cv_results(self) -> Dict:
+        """
+        Aggregate and compare all CV results
+        
+        Returns:
+            Aggregated CV comparison
+        """
+        if not self.cv_results:
+            return {'status': 'no_results'}
+        
+        comparison = []
+        for result in self.cv_results:
+            comparison.append({
+                'strategy': result['strategy'],
+                'mean_rmse': result['mean_rmse'],
+                'std_rmse': result['std_rmse'],
+                'mean_r2': result['mean_r2']
+            })
+        
+        return {
+            'total_evaluations': len(self.cv_results),
+            'comparison': comparison,
+            'best_strategy': min(comparison, key=lambda x: x['mean_rmse'])['strategy']
+        }
+    
+    def get_cv_summary(self) -> str:
+        """Generate formatted CV summary report"""
+        lines = [
+            "=" * 60,
+            "CROSS-VALIDATION SUMMARY",
+            "=" * 60,
+            ""
+        ]
+        
+        for i, result in enumerate(self.cv_results):
+            lines.extend([
+                f"Strategy: {result['strategy']}",
+                f"  Folds: {result['n_splits']}",
+                f"  RMSE: {result['mean_rmse']:.2f} ± {result['std_rmse']:.2f}",
+                f"  MAE:  {result['mean_mae']:.2f}",
+                f"  R²:   {result['mean_r2']:.4f}",
+                ""
+            ])
+        
+        if self.cv_results:
+            best = min(self.cv_results, key=lambda x: x['mean_rmse'])
+            lines.append(f"Best Strategy: {best['strategy']} (RMSE: {best['mean_rmse']:.2f})")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test evaluator
     print("="*60)
