@@ -315,6 +315,336 @@ class ModelMonitor:
         logger.info(f"Loaded baseline metrics from {filepath}")
 
 
+class ConceptDriftDetector:
+    """
+    Advanced concept drift detection for RUL prediction models
+    Detects target drift, covariate shift, and provides action recommendations
+    """
+    
+    def __init__(self, sensitivity: str = 'medium'):
+        """
+        Initialize concept drift detector
+        
+        Args:
+            sensitivity: Detection sensitivity ('low', 'medium', 'high')
+        """
+        self.sensitivity = sensitivity
+        self.thresholds = {
+            'low': {'psi': 0.25, 'ks_alpha': 0.01},
+            'medium': {'psi': 0.15, 'ks_alpha': 0.05},
+            'high': {'psi': 0.1, 'ks_alpha': 0.1}
+        }
+        self.drift_history = []
+        logger.info(f"Initialized ConceptDriftDetector (sensitivity: {sensitivity})")
+    
+    def detect_target_drift(self,
+                           baseline_rul: np.ndarray,
+                           current_rul: np.ndarray) -> Dict:
+        """
+        Detect drift in target (RUL) distribution
+        
+        Args:
+            baseline_rul: Baseline RUL values
+            current_rul: Current RUL values
+            
+        Returns:
+            Target drift analysis
+        """
+        logger.info("Detecting target drift...")
+        
+        baseline_rul = baseline_rul[np.isfinite(baseline_rul)]
+        current_rul = current_rul[np.isfinite(current_rul)]
+        
+        # Statistical tests
+        ks_stat, ks_pval = stats.ks_2samp(baseline_rul, current_rul)
+        
+        # Distribution comparison
+        baseline_stats = {
+            'mean': float(np.mean(baseline_rul)),
+            'std': float(np.std(baseline_rul)),
+            'median': float(np.median(baseline_rul)),
+            'min': float(np.min(baseline_rul)),
+            'max': float(np.max(baseline_rul))
+        }
+        
+        current_stats = {
+            'mean': float(np.mean(current_rul)),
+            'std': float(np.std(current_rul)),
+            'median': float(np.median(current_rul)),
+            'min': float(np.min(current_rul)),
+            'max': float(np.max(current_rul))
+        }
+        
+        # Calculate shift magnitude
+        mean_shift = abs(current_stats['mean'] - baseline_stats['mean'])
+        std_shift = abs(current_stats['std'] - baseline_stats['std'])
+        
+        threshold = self.thresholds[self.sensitivity]
+        drift_detected = ks_pval < threshold['ks_alpha']
+        
+        result = {
+            'drift_detected': drift_detected,
+            'ks_statistic': float(ks_stat),
+            'ks_pvalue': float(ks_pval),
+            'baseline_stats': baseline_stats,
+            'current_stats': current_stats,
+            'mean_shift': float(mean_shift),
+            'std_shift': float(std_shift),
+            'significance_level': threshold['ks_alpha']
+        }
+        
+        if drift_detected:
+            logger.warning(f"Target drift detected (p={ks_pval:.4f})")
+        else:
+            logger.info("No significant target drift detected")
+        
+        return result
+    
+    def detect_covariate_shift(self,
+                               baseline_features: pd.DataFrame,
+                               current_features: pd.DataFrame,
+                               feature_cols: List[str]) -> Dict:
+        """
+        Detect covariate (input feature) shift
+        
+        Args:
+            baseline_features: Baseline feature DataFrame
+            current_features: Current feature DataFrame
+            feature_cols: Feature columns to analyze
+            
+        Returns:
+            Covariate shift analysis
+        """
+        logger.info(f"Detecting covariate shift in {len(feature_cols)} features...")
+        
+        threshold = self.thresholds[self.sensitivity]
+        
+        feature_drifts = {}
+        drifted_count = 0
+        
+        for col in feature_cols:
+            if col not in baseline_features.columns or col not in current_features.columns:
+                continue
+            
+            baseline_vals = baseline_features[col].dropna().values
+            current_vals = current_features[col].dropna().values
+            
+            if len(baseline_vals) == 0 or len(current_vals) == 0:
+                continue
+            
+            # KS test
+            ks_stat, ks_pval = stats.ks_2samp(baseline_vals, current_vals)
+            drift_detected = ks_pval < threshold['ks_alpha']
+            
+            if drift_detected:
+                drifted_count += 1
+            
+            feature_drifts[col] = {
+                'drift_detected': drift_detected,
+                'ks_statistic': float(ks_stat),
+                'ks_pvalue': float(ks_pval),
+                'baseline_mean': float(np.mean(baseline_vals)),
+                'current_mean': float(np.mean(current_vals))
+            }
+        
+        drift_percentage = (drifted_count / len(feature_drifts) * 100) if feature_drifts else 0
+        
+        result = {
+            'drift_detected': drifted_count > 0,
+            'drifted_feature_count': drifted_count,
+            'total_features': len(feature_drifts),
+            'drift_percentage': float(drift_percentage),
+            'feature_details': feature_drifts,
+            'top_drifted': sorted(
+                [(k, v['ks_statistic']) for k, v in feature_drifts.items() if v['drift_detected']],
+                key=lambda x: x[1], reverse=True
+            )[:10]
+        }
+        
+        logger.info(f"Covariate shift: {drifted_count}/{len(feature_drifts)} features drifted")
+        
+        return result
+    
+    def calculate_drift_severity(self,
+                                 target_drift: Dict,
+                                 covariate_shift: Dict) -> Dict:
+        """
+        Calculate overall drift severity score
+        
+        Args:
+            target_drift: Target drift results
+            covariate_shift: Covariate shift results
+            
+        Returns:
+            Drift severity assessment
+        """
+        logger.info("Calculating drift severity...")
+        
+        severity_score = 0.0
+        factors = []
+        
+        # Target drift contribution (0-50 points)
+        if target_drift.get('drift_detected'):
+            mean_shift_pct = (target_drift['mean_shift'] / 
+                            (target_drift['baseline_stats']['mean'] + 1e-10)) * 100
+            target_score = min(50, mean_shift_pct * 2)
+            severity_score += target_score
+            factors.append(f"Target mean shifted by {mean_shift_pct:.1f}%")
+        
+        # Covariate shift contribution (0-50 points)
+        drift_pct = covariate_shift.get('drift_percentage', 0)
+        covariate_score = min(50, drift_pct)
+        severity_score += covariate_score
+        
+        if drift_pct > 0:
+            factors.append(f"{drift_pct:.1f}% of features drifted")
+        
+        # Severity classification
+        if severity_score >= 70:
+            severity_level = 'critical'
+        elif severity_score >= 40:
+            severity_level = 'high'
+        elif severity_score >= 20:
+            severity_level = 'moderate'
+        elif severity_score > 0:
+            severity_level = 'low'
+        else:
+            severity_level = 'none'
+        
+        result = {
+            'severity_score': float(severity_score),
+            'severity_level': severity_level,
+            'contributing_factors': factors,
+            'requires_action': severity_level in ['critical', 'high']
+        }
+        
+        logger.info(f"Drift severity: {severity_level} (score: {severity_score:.1f})")
+        
+        return result
+    
+    def recommend_actions(self, severity: Dict) -> List[Dict]:
+        """
+        Recommend actions based on drift severity
+        
+        Args:
+            severity: Drift severity results
+            
+        Returns:
+            List of recommended actions
+        """
+        logger.info("Generating action recommendations...")
+        
+        actions = []
+        level = severity['severity_level']
+        
+        if level == 'critical':
+            actions.extend([
+                {
+                    'priority': 'immediate',
+                    'action': 'retrain_model',
+                    'description': 'Immediately retrain model with recent data'
+                },
+                {
+                    'priority': 'high',
+                    'action': 'investigate_root_cause',
+                    'description': 'Investigate data pipeline for anomalies'
+                },
+                {
+                    'priority': 'high',
+                    'action': 'recalibrate_sensors',
+                    'description': 'Check sensor calibration status'
+                }
+            ])
+        elif level == 'high':
+            actions.extend([
+                {
+                    'priority': 'high',
+                    'action': 'schedule_retraining',
+                    'description': 'Schedule model retraining within 24 hours'
+                },
+                {
+                    'priority': 'medium',
+                    'action': 'increase_monitoring',
+                    'description': 'Increase monitoring frequency'
+                }
+            ])
+        elif level == 'moderate':
+            actions.extend([
+                {
+                    'priority': 'medium',
+                    'action': 'plan_retraining',
+                    'description': 'Plan model retraining within 1 week'
+                },
+                {
+                    'priority': 'low',
+                    'action': 'collect_more_data',
+                    'description': 'Collect additional labeled data'
+                }
+            ])
+        elif level == 'low':
+            actions.append({
+                'priority': 'low',
+                'action': 'continue_monitoring',
+                'description': 'Continue routine monitoring'
+            })
+        else:
+            actions.append({
+                'priority': 'info',
+                'action': 'no_action_required',
+                'description': 'No drift detected, system healthy'
+            })
+        
+        return actions
+    
+    def run_full_analysis(self,
+                          baseline_features: pd.DataFrame,
+                          current_features: pd.DataFrame,
+                          baseline_rul: np.ndarray,
+                          current_rul: np.ndarray,
+                          feature_cols: List[str]) -> Dict:
+        """
+        Run complete drift analysis
+        
+        Args:
+            baseline_features: Baseline feature DataFrame
+            current_features: Current feature DataFrame
+            baseline_rul: Baseline RUL values
+            current_rul: Current RUL values
+            feature_cols: Feature columns
+            
+        Returns:
+            Complete drift analysis report
+        """
+        logger.info("Running full drift analysis...")
+        
+        # Detect target drift
+        target_drift = self.detect_target_drift(baseline_rul, current_rul)
+        
+        # Detect covariate shift
+        covariate_shift = self.detect_covariate_shift(
+            baseline_features, current_features, feature_cols
+        )
+        
+        # Calculate severity
+        severity = self.calculate_drift_severity(target_drift, covariate_shift)
+        
+        # Get recommendations
+        recommendations = self.recommend_actions(severity)
+        
+        report = {
+            'timestamp': datetime.now().isoformat(),
+            'sensitivity': self.sensitivity,
+            'target_drift': target_drift,
+            'covariate_shift': covariate_shift,
+            'severity': severity,
+            'recommendations': recommendations
+        }
+        
+        self.drift_history.append(report)
+        
+        return report
+
+
 if __name__ == "__main__":
     # Test model monitor
     print("="*60)
