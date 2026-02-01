@@ -270,6 +270,346 @@ class RULVisualizer:
         plt.close()
 
 
+class InteractiveVisualizer:
+    """
+    Interactive visualization and dashboard data generator
+    Creates fleet overviews, trend comparisons, and exportable reports
+    """
+    
+    def __init__(self, save_dir: str = None):
+        """
+        Initialize interactive visualizer
+        
+        Args:
+            save_dir: Directory to save outputs
+        """
+        self.save_dir = save_dir or config.PLOTS_DIR
+        os.makedirs(self.save_dir, exist_ok=True)
+        self.dashboard_data = {}
+        logger.info(f"Initialized InteractiveVisualizer (output: {self.save_dir})")
+    
+    def create_dashboard_data(self,
+                              predictions_df: pd.DataFrame,
+                              rul_col: str = 'RUL_pred') -> Dict:
+        """
+        Prepare data for dashboard display
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            rul_col: RUL prediction column name
+            
+        Returns:
+            Dashboard data dictionary
+        """
+        logger.info("Creating dashboard data...")
+        
+        # Get latest RUL per engine
+        if 'time_cycles' in predictions_df.columns:
+            latest = predictions_df.groupby('unit_id').last().reset_index()
+        else:
+            latest = predictions_df
+        
+        # Health classification
+        def classify(rul):
+            if rul < 30:
+                return 'Critical'
+            elif rul < 50:
+                return 'Warning'
+            elif rul < 80:
+                return 'Caution'
+            else:
+                return 'Healthy'
+        
+        latest['status'] = latest[rul_col].apply(classify)
+        
+        # Status summary
+        status_counts = latest['status'].value_counts().to_dict()
+        
+        # Top critical engines
+        critical_engines = latest[latest['status'] == 'Critical'].sort_values(rul_col)
+        
+        self.dashboard_data = {
+            'summary': {
+                'total_engines': len(latest),
+                'status_distribution': status_counts,
+                'avg_rul': float(latest[rul_col].mean()),
+                'min_rul': float(latest[rul_col].min()),
+                'max_rul': float(latest[rul_col].max())
+            },
+            'critical_engines': critical_engines[['unit_id', rul_col, 'status']].to_dict('records')[:10],
+            'rul_histogram': {
+                'bins': [0, 30, 50, 80, 100, 150],
+                'counts': [
+                    len(latest[latest[rul_col] < 30]),
+                    len(latest[(latest[rul_col] >= 30) & (latest[rul_col] < 50)]),
+                    len(latest[(latest[rul_col] >= 50) & (latest[rul_col] < 80)]),
+                    len(latest[(latest[rul_col] >= 80) & (latest[rul_col] < 100)]),
+                    len(latest[latest[rul_col] >= 100])
+                ]
+            }
+        }
+        
+        return self.dashboard_data
+    
+    def plot_fleet_overview(self,
+                           predictions_df: pd.DataFrame,
+                           rul_col: str = 'RUL_pred',
+                           save_filename: str = None):
+        """
+        Create fleet-wide health visualization
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            rul_col: RUL column name
+            save_filename: Output filename
+        """
+        logger.info("Plotting fleet overview...")
+        
+        # Get dashboard data if not available
+        if not self.dashboard_data:
+            self.create_dashboard_data(predictions_df, rul_col)
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        
+        # 1. Status pie chart
+        status_counts = self.dashboard_data['summary']['status_distribution']
+        colors = {'Critical': 'red', 'Warning': 'orange', 'Caution': 'yellow', 'Healthy': 'green'}
+        ax1 = axes[0, 0]
+        wedges, _, autotexts = ax1.pie(
+            status_counts.values(), 
+            labels=status_counts.keys(),
+            autopct='%1.1f%%',
+            colors=[colors.get(k, 'gray') for k in status_counts.keys()],
+            explode=[0.05 if k == 'Critical' else 0 for k in status_counts.keys()]
+        )
+        ax1.set_title('Fleet Health Distribution', fontsize=12, fontweight='bold')
+        
+        # 2. RUL histogram
+        ax2 = axes[0, 1]
+        if 'time_cycles' in predictions_df.columns:
+            latest = predictions_df.groupby('unit_id').last().reset_index()
+        else:
+            latest = predictions_df
+        ax2.hist(latest[rul_col], bins=20, edgecolor='black', alpha=0.7)
+        ax2.axvline(x=30, color='r', linestyle='--', label='Critical Threshold')
+        ax2.axvline(x=50, color='orange', linestyle='--', label='Warning Threshold')
+        ax2.set_xlabel('RUL (cycles)')
+        ax2.set_ylabel('Number of Engines')
+        ax2.set_title('RUL Distribution', fontsize=12, fontweight='bold')
+        ax2.legend()
+        
+        # 3. Summary statistics
+        ax3 = axes[1, 0]
+        summary = self.dashboard_data['summary']
+        stats_text = [
+            f"Total Engines: {summary['total_engines']}",
+            f"Average RUL: {summary['avg_rul']:.1f} cycles",
+            f"Minimum RUL: {summary['min_rul']:.1f} cycles",
+            f"Maximum RUL: {summary['max_rul']:.1f} cycles",
+            "",
+            "Status Breakdown:",
+        ]
+        for status, count in summary['status_distribution'].items():
+            stats_text.append(f"  • {status}: {count}")
+        
+        ax3.axis('off')
+        ax3.text(0.1, 0.9, '\n'.join(stats_text), fontsize=11,
+                transform=ax3.transAxes, verticalalignment='top',
+                fontfamily='monospace')
+        ax3.set_title('Fleet Statistics', fontsize=12, fontweight='bold')
+        
+        # 4. Critical engines bar chart
+        ax4 = axes[1, 1]
+        critical = self.dashboard_data['critical_engines'][:5]
+        if critical:
+            engine_ids = [str(e['unit_id']) for e in critical]
+            ruls = [e[rul_col] for e in critical]
+            colors_bar = ['red' if r < 30 else 'orange' for r in ruls]
+            ax4.barh(engine_ids, ruls, color=colors_bar)
+            ax4.set_xlabel('RUL (cycles)')
+            ax4.set_ylabel('Engine ID')
+            ax4.set_title('Top 5 Critical Engines', fontsize=12, fontweight='bold')
+        else:
+            ax4.text(0.5, 0.5, 'No Critical Engines', ha='center', va='center')
+            ax4.axis('off')
+        
+        plt.suptitle('Fleet Health Overview Dashboard', fontsize=14, fontweight='bold')
+        plt.tight_layout()
+        
+        if save_filename:
+            filepath = os.path.join(self.save_dir, save_filename)
+            plt.savefig(filepath, dpi=config.PLOT_CONFIG['dpi'], bbox_inches='tight')
+            logger.info(f"Saved fleet overview to {filepath}")
+        
+        plt.close()
+    
+    def plot_degradation_trends(self,
+                               predictions_df: pd.DataFrame,
+                               engine_ids: List[int] = None,
+                               rul_col: str = 'RUL_pred',
+                               save_filename: str = None):
+        """
+        Compare degradation trends across multiple engines
+        
+        Args:
+            predictions_df: DataFrame with time series predictions
+            engine_ids: List of engine IDs to compare
+            rul_col: RUL column name
+            save_filename: Output filename
+        """
+        logger.info("Plotting degradation trends...")
+        
+        if engine_ids is None:
+            # Select engines with diverse RUL values
+            latest = predictions_df.groupby('unit_id')[rul_col].last()
+            engine_ids = [
+                latest.idxmin(),  # Lowest RUL
+                latest.idxmax(),  # Highest RUL
+                latest.sort_values().index[len(latest)//2]  # Median RUL
+            ]
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        colors = plt.cm.viridis(np.linspace(0, 1, len(engine_ids)))
+        
+        for i, engine_id in enumerate(engine_ids):
+            engine_data = predictions_df[predictions_df['unit_id'] == engine_id].sort_values('time_cycles')
+            if len(engine_data) > 0:
+                final_rul = engine_data[rul_col].iloc[-1]
+                ax.plot(engine_data['time_cycles'], engine_data[rul_col],
+                       label=f'Engine {engine_id} (RUL: {final_rul:.0f})',
+                       color=colors[i], linewidth=2)
+        
+        ax.axhline(y=30, color='r', linestyle='--', alpha=0.5, label='Critical')
+        ax.axhline(y=50, color='orange', linestyle='--', alpha=0.5, label='Warning')
+        
+        ax.set_xlabel('Time (cycles)', fontsize=12)
+        ax.set_ylabel('RUL (cycles)', fontsize=12)
+        ax.set_title('Engine Degradation Trends Comparison', fontsize=14, fontweight='bold')
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if save_filename:
+            filepath = os.path.join(self.save_dir, save_filename)
+            plt.savefig(filepath, dpi=config.PLOT_CONFIG['dpi'], bbox_inches='tight')
+            logger.info(f"Saved degradation trends to {filepath}")
+        
+        plt.close()
+    
+    def generate_html_report(self,
+                            predictions_df: pd.DataFrame,
+                            model_name: str = 'RUL Model',
+                            y_true: np.ndarray = None,
+                            y_pred: np.ndarray = None,
+                            filename: str = None) -> str:
+        """
+        Generate interactive HTML report
+        
+        Args:
+            predictions_df: DataFrame with predictions
+            model_name: Model name for report
+            y_true: True RUL values (optional)
+            y_pred: Predicted values (optional)
+            filename: Output filename
+            
+        Returns:
+            HTML string
+        """
+        logger.info("Generating HTML report...")
+        
+        from datetime import datetime
+        
+        # Get dashboard data
+        if not self.dashboard_data:
+            self.create_dashboard_data(predictions_df)
+        
+        summary = self.dashboard_data['summary']
+        
+        # Build HTML
+        html_parts = [
+            "<!DOCTYPE html>",
+            "<html><head>",
+            "<title>RUL Prediction Report</title>",
+            "<style>",
+            "body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }",
+            ".container { max-width: 1000px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }",
+            "h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }",
+            "h2 { color: #555; margin-top: 30px; }",
+            ".stat-box { display: inline-block; padding: 20px; margin: 10px; background: #e8f5e9; border-radius: 8px; text-align: center; }",
+            ".stat-value { font-size: 28px; font-weight: bold; color: #2196F3; }",
+            ".stat-label { color: #666; font-size: 14px; }",
+            ".critical { color: red; font-weight: bold; }",
+            ".warning { color: orange; }",
+            ".healthy { color: green; }",
+            "table { width: 100%; border-collapse: collapse; margin-top: 20px; }",
+            "th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }",
+            "th { background: #4CAF50; color: white; }",
+            "tr:hover { background: #f5f5f5; }",
+            "</style></head><body>",
+            "<div class='container'>",
+            f"<h1>🔧 {model_name} - Fleet Health Report</h1>",
+            f"<p><em>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</em></p>",
+            "<h2>📊 Fleet Summary</h2>",
+            "<div class='stats'>",
+            f"<div class='stat-box'><div class='stat-value'>{summary['total_engines']}</div><div class='stat-label'>Total Engines</div></div>",
+            f"<div class='stat-box'><div class='stat-value'>{summary['avg_rul']:.1f}</div><div class='stat-label'>Avg RUL (cycles)</div></div>",
+            f"<div class='stat-box'><div class='stat-value'>{summary['min_rul']:.0f}</div><div class='stat-label'>Min RUL</div></div>",
+            f"<div class='stat-box'><div class='stat-value'>{summary['max_rul']:.0f}</div><div class='stat-label'>Max RUL</div></div>",
+            "</div>",
+            "<h2>🚨 Health Status</h2>",
+            "<ul>"
+        ]
+        
+        for status, count in summary['status_distribution'].items():
+            css_class = status.lower() if status in ['Critical', 'Warning', 'Healthy'] else ''
+            html_parts.append(f"<li class='{css_class}'>{status}: {count} engines</li>")
+        
+        html_parts.append("</ul>")
+        
+        # Critical engines table
+        critical = self.dashboard_data.get('critical_engines', [])
+        if critical:
+            html_parts.extend([
+                "<h2>⚠️ Critical Engines</h2>",
+                "<table><tr><th>Engine ID</th><th>RUL (cycles)</th><th>Status</th></tr>"
+            ])
+            for eng in critical[:10]:
+                html_parts.append(
+                    f"<tr><td>{eng['unit_id']}</td><td>{eng.get('RUL_pred', 0):.0f}</td><td class='critical'>{eng['status']}</td></tr>"
+                )
+            html_parts.append("</table>")
+        
+        # Add model metrics if available
+        if y_true is not None and y_pred is not None:
+            from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+            rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+            mae = mean_absolute_error(y_true, y_pred)
+            r2 = r2_score(y_true, y_pred)
+            
+            html_parts.extend([
+                "<h2>📈 Model Performance</h2>",
+                f"<div class='stat-box'><div class='stat-value'>{rmse:.2f}</div><div class='stat-label'>RMSE</div></div>",
+                f"<div class='stat-box'><div class='stat-value'>{mae:.2f}</div><div class='stat-label'>MAE</div></div>",
+                f"<div class='stat-box'><div class='stat-value'>{r2:.4f}</div><div class='stat-label'>R²</div></div>"
+            ])
+        
+        html_parts.extend([
+            "</div></body></html>"
+        ])
+        
+        html = '\n'.join(html_parts)
+        
+        if filename:
+            filepath = os.path.join(self.save_dir, filename)
+            with open(filepath, 'w') as f:
+                f.write(html)
+            logger.info(f"HTML report saved to {filepath}")
+        
+        return html
+
+
 if __name__ == "__main__":
     # Test visualizer
     print("="*60)
