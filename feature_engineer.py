@@ -462,6 +462,245 @@ def engineer_features(train_df: pd.DataFrame,
     }
 
 
+class FeatureImportanceAnalyzer:
+    """
+    Analyze feature importance and correlations
+    Identifies redundant features and recommends optimal subsets
+    """
+    
+    def __init__(self):
+        """Initialize feature importance analyzer"""
+        self.importance_scores = {}
+        self.correlations = None
+        self.redundant_pairs = []
+        logger.info("Initialized FeatureImportanceAnalyzer")
+    
+    def calculate_permutation_importance(self,
+                                         model,
+                                         X: np.ndarray,
+                                         y: np.ndarray,
+                                         feature_names: List[str],
+                                         n_repeats: int = 10) -> Dict:
+        """
+        Calculate feature importance via permutation
+        
+        Args:
+            model: Trained model with predict method
+            X: Feature matrix
+            y: Target values
+            feature_names: List of feature names
+            n_repeats: Number of permutation repeats
+            
+        Returns:
+            Dictionary with importance scores
+        """
+        from sklearn.metrics import mean_squared_error
+        
+        logger.info(f"Calculating permutation importance for {len(feature_names)} features...")
+        
+        # Baseline score
+        baseline_pred = model.predict(X)
+        if hasattr(baseline_pred, 'ravel'):
+            baseline_pred = baseline_pred.ravel()
+        baseline_score = mean_squared_error(y, baseline_pred)
+        
+        importances = {}
+        
+        for i, feature in enumerate(feature_names):
+            scores = []
+            
+            for _ in range(n_repeats):
+                # Permute feature
+                X_permuted = X.copy()
+                X_permuted[:, i] = np.random.permutation(X_permuted[:, i])
+                
+                # Score with permuted feature
+                perm_pred = model.predict(X_permuted)
+                if hasattr(perm_pred, 'ravel'):
+                    perm_pred = perm_pred.ravel()
+                perm_score = mean_squared_error(y, perm_pred)
+                
+                scores.append(perm_score - baseline_score)
+            
+            importances[feature] = {
+                'mean': float(np.mean(scores)),
+                'std': float(np.std(scores)),
+                'importance_ratio': float(np.mean(scores) / (baseline_score + 1e-10))
+            }
+        
+        # Sort by importance
+        sorted_features = sorted(importances.items(), 
+                                key=lambda x: x[1]['mean'], reverse=True)
+        
+        self.importance_scores = {
+            'baseline_mse': float(baseline_score),
+            'features': dict(sorted_features),
+            'top_10': [f[0] for f in sorted_features[:10]]
+        }
+        
+        logger.info(f"Top 5 important features: {[f[0] for f in sorted_features[:5]]}")
+        
+        return self.importance_scores
+    
+    def analyze_feature_correlations(self,
+                                     df: pd.DataFrame,
+                                     feature_cols: List[str],
+                                     method: str = 'pearson') -> pd.DataFrame:
+        """
+        Analyze correlations between features
+        
+        Args:
+            df: DataFrame with features
+            feature_cols: Feature column names
+            method: Correlation method ('pearson', 'spearman', 'kendall')
+            
+        Returns:
+            Correlation matrix
+        """
+        logger.info(f"Analyzing correlations for {len(feature_cols)} features...")
+        
+        # Calculate correlation matrix
+        self.correlations = df[feature_cols].corr(method=method)
+        
+        return self.correlations
+    
+    def identify_redundant_features(self,
+                                    df: pd.DataFrame,
+                                    feature_cols: List[str],
+                                    threshold: float = 0.95) -> List[tuple]:
+        """
+        Identify highly correlated (redundant) feature pairs
+        
+        Args:
+            df: DataFrame with features
+            feature_cols: Feature column names
+            threshold: Correlation threshold for redundancy
+            
+        Returns:
+            List of (feature1, feature2, correlation) tuples
+        """
+        logger.info(f"Identifying redundant features (threshold: {threshold})...")
+        
+        if self.correlations is None:
+            self.analyze_feature_correlations(df, feature_cols)
+        
+        redundant = []
+        
+        for i in range(len(feature_cols)):
+            for j in range(i + 1, len(feature_cols)):
+                corr_value = abs(self.correlations.iloc[i, j])
+                if corr_value >= threshold:
+                    redundant.append((
+                        feature_cols[i],
+                        feature_cols[j],
+                        float(corr_value)
+                    ))
+        
+        # Sort by correlation
+        redundant.sort(key=lambda x: x[2], reverse=True)
+        self.redundant_pairs = redundant
+        
+        logger.info(f"Found {len(redundant)} redundant feature pairs")
+        
+        return redundant
+    
+    def recommend_feature_subset(self,
+                                 df: pd.DataFrame,
+                                 feature_cols: List[str],
+                                 target_col: str = 'RUL',
+                                 max_features: int = None,
+                                 correlation_threshold: float = 0.9) -> Dict:
+        """
+        Recommend optimal feature subset
+        
+        Removes redundant features while keeping most predictive ones
+        
+        Args:
+            df: DataFrame with features and target
+            feature_cols: All feature columns
+            target_col: Target column name
+            max_features: Maximum features to select
+            correlation_threshold: Threshold for removing redundant features
+            
+        Returns:
+            Feature selection recommendations
+        """
+        logger.info("Generating feature subset recommendations...")
+        
+        # Get target correlations
+        target_corrs = df[feature_cols].corrwith(df[target_col]).abs()
+        target_corrs = target_corrs.sort_values(ascending=False)
+        
+        # Identify redundant pairs
+        self.identify_redundant_features(df, feature_cols, correlation_threshold)
+        
+        # Select features: prefer those with higher target correlation
+        selected = []
+        dropped = []
+        
+        for feature in target_corrs.index:
+            if feature in dropped:
+                continue
+            
+            selected.append(feature)
+            
+            # Remove redundant features
+            for f1, f2, corr in self.redundant_pairs:
+                if f1 == feature and f2 not in dropped and f2 not in selected:
+                    dropped.append(f2)
+                elif f2 == feature and f1 not in dropped and f1 not in selected:
+                    dropped.append(f1)
+        
+        # Limit to max_features if specified
+        if max_features and len(selected) > max_features:
+            selected = selected[:max_features]
+        
+        recommendations = {
+            'selected_features': selected,
+            'dropped_features': dropped,
+            'original_count': len(feature_cols),
+            'selected_count': len(selected),
+            'reduction_pct': (1 - len(selected) / len(feature_cols)) * 100,
+            'target_correlations': {f: float(target_corrs[f]) for f in selected[:10]},
+            'redundant_pairs_removed': len(self.redundant_pairs)
+        }
+        
+        logger.info(f"Recommended {len(selected)} features "
+                   f"(reduced by {recommendations['reduction_pct']:.1f}%)")
+        
+        return recommendations
+    
+    def get_importance_report(self) -> str:
+        """Generate formatted importance report"""
+        lines = [
+            "=" * 60,
+            "FEATURE IMPORTANCE REPORT",
+            "=" * 60,
+            ""
+        ]
+        
+        if self.importance_scores:
+            lines.append(f"Baseline MSE: {self.importance_scores['baseline_mse']:.4f}")
+            lines.append("")
+            lines.append("Top 10 Important Features:")
+            
+            for i, feat in enumerate(self.importance_scores['top_10'][:10], 1):
+                imp_data = self.importance_scores['features'][feat]
+                lines.append(f"  {i}. {feat}: {imp_data['mean']:.4f} (±{imp_data['std']:.4f})")
+        
+        if self.redundant_pairs:
+            lines.extend([
+                "",
+                f"Redundant Feature Pairs: {len(self.redundant_pairs)}"
+            ])
+            for f1, f2, corr in self.redundant_pairs[:5]:
+                lines.append(f"  • {f1} ↔ {f2}: {corr:.3f}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test the feature engineer
     from data_loader import load_dataset
