@@ -930,6 +930,250 @@ class ComprehensiveReportGenerator:
         return self.report_data
 
 
+class ExperimentTracker:
+    """
+    Track and compare ML experiments
+    Stores parameters, metrics, and artifacts for each experiment
+    """
+    
+    def __init__(self, experiments_dir: str = None):
+        """
+        Initialize experiment tracker
+        
+        Args:
+            experiments_dir: Directory to store experiments
+        """
+        self.experiments_dir = experiments_dir or os.path.join(config.RESULTS_DIR, 'experiments')
+        os.makedirs(self.experiments_dir, exist_ok=True)
+        
+        self.experiments = {}
+        self.current_experiment = None
+        self._load_existing_experiments()
+        logger.info(f"Initialized ExperimentTracker (dir: {self.experiments_dir})")
+    
+    def _load_existing_experiments(self):
+        """Load existing experiments from directory"""
+        for f in os.listdir(self.experiments_dir):
+            if f.endswith('.json'):
+                try:
+                    filepath = os.path.join(self.experiments_dir, f)
+                    with open(filepath, 'r') as file:
+                        exp = json.load(file)
+                        self.experiments[exp['experiment_id']] = exp
+                except Exception:
+                    continue
+        
+        logger.info(f"Loaded {len(self.experiments)} existing experiments")
+    
+    def create_experiment(self,
+                          name: str,
+                          description: str = '',
+                          tags: List[str] = None) -> str:
+        """
+        Create a new experiment
+        
+        Args:
+            name: Experiment name
+            description: Experiment description
+            tags: Optional tags for categorization
+            
+        Returns:
+            Experiment ID
+        """
+        experiment_id = f"exp_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        experiment = {
+            'experiment_id': experiment_id,
+            'name': name,
+            'description': description,
+            'tags': tags or [],
+            'created_at': datetime.now().isoformat(),
+            'status': 'running',
+            'parameters': {},
+            'metrics': {},
+            'artifacts': []
+        }
+        
+        self.experiments[experiment_id] = experiment
+        self.current_experiment = experiment_id
+        
+        logger.info(f"Created experiment: {name} ({experiment_id})")
+        
+        return experiment_id
+    
+    def log_parameters(self, params: Dict[str, Any]):
+        """
+        Log parameters for current experiment
+        
+        Args:
+            params: Dictionary of parameter names and values
+        """
+        if not self.current_experiment:
+            raise ValueError("No active experiment. Call create_experiment() first.")
+        
+        self.experiments[self.current_experiment]['parameters'].update(params)
+        logger.debug(f"Logged {len(params)} parameters")
+    
+    def log_metrics(self, metrics: Dict[str, float]):
+        """
+        Log metrics for current experiment
+        
+        Args:
+            metrics: Dictionary of metric names and values
+        """
+        if not self.current_experiment:
+            raise ValueError("No active experiment. Call create_experiment() first.")
+        
+        self.experiments[self.current_experiment]['metrics'].update(metrics)
+        logger.debug(f"Logged {len(metrics)} metrics")
+    
+    def log_artifact(self, name: str, filepath: str):
+        """
+        Log an artifact for current experiment
+        
+        Args:
+            name: Artifact name
+            filepath: Path to artifact file
+        """
+        if not self.current_experiment:
+            raise ValueError("No active experiment. Call create_experiment() first.")
+        
+        artifact = {
+            'name': name,
+            'path': filepath,
+            'logged_at': datetime.now().isoformat()
+        }
+        
+        self.experiments[self.current_experiment]['artifacts'].append(artifact)
+        logger.debug(f"Logged artifact: {name}")
+    
+    def end_experiment(self, status: str = 'completed'):
+        """
+        End current experiment
+        
+        Args:
+            status: Final status ('completed', 'failed', 'aborted')
+        """
+        if not self.current_experiment:
+            return
+        
+        exp = self.experiments[self.current_experiment]
+        exp['status'] = status
+        exp['ended_at'] = datetime.now().isoformat()
+        
+        # Save to file
+        filepath = os.path.join(self.experiments_dir, f"{self.current_experiment}.json")
+        with open(filepath, 'w') as f:
+            json.dump(exp, f, indent=2)
+        
+        logger.info(f"Experiment {self.current_experiment} ended with status: {status}")
+        self.current_experiment = None
+    
+    def compare_experiments(self,
+                            experiment_ids: List[str] = None,
+                            metric: str = 'rmse') -> pd.DataFrame:
+        """
+        Compare multiple experiments
+        
+        Args:
+            experiment_ids: List of experiment IDs to compare (None = all)
+            metric: Primary metric for sorting
+            
+        Returns:
+            Comparison DataFrame
+        """
+        if experiment_ids is None:
+            experiment_ids = list(self.experiments.keys())
+        
+        comparisons = []
+        
+        for exp_id in experiment_ids:
+            if exp_id not in self.experiments:
+                continue
+            
+            exp = self.experiments[exp_id]
+            row = {
+                'experiment_id': exp_id,
+                'name': exp['name'],
+                'status': exp['status'],
+                'created_at': exp['created_at']
+            }
+            row.update(exp.get('metrics', {}))
+            comparisons.append(row)
+        
+        df = pd.DataFrame(comparisons)
+        
+        if metric in df.columns:
+            df = df.sort_values(metric)
+        
+        return df
+    
+    def get_best_experiment(self,
+                            metric: str = 'rmse',
+                            minimize: bool = True) -> Dict:
+        """
+        Get best experiment by metric
+        
+        Args:
+            metric: Metric to optimize
+            minimize: True if lower is better
+            
+        Returns:
+            Best experiment details
+        """
+        best_exp = None
+        best_value = float('inf') if minimize else float('-inf')
+        
+        for exp_id, exp in self.experiments.items():
+            if exp['status'] != 'completed':
+                continue
+            
+            value = exp.get('metrics', {}).get(metric)
+            if value is None:
+                continue
+            
+            if minimize and value < best_value:
+                best_value = value
+                best_exp = exp
+            elif not minimize and value > best_value:
+                best_value = value
+                best_exp = exp
+        
+        return best_exp
+    
+    def get_experiment_summary(self, experiment_id: str = None) -> str:
+        """Generate summary for an experiment"""
+        if experiment_id is None:
+            experiment_id = self.current_experiment
+        
+        if experiment_id not in self.experiments:
+            return "Experiment not found"
+        
+        exp = self.experiments[experiment_id]
+        
+        lines = [
+            "=" * 60,
+            f"EXPERIMENT: {exp['name']}",
+            "=" * 60,
+            f"ID: {exp['experiment_id']}",
+            f"Status: {exp['status']}",
+            f"Created: {exp['created_at']}",
+            "",
+            "Parameters:",
+        ]
+        
+        for k, v in exp.get('parameters', {}).items():
+            lines.append(f"  {k}: {v}")
+        
+        lines.extend(["", "Metrics:"])
+        for k, v in exp.get('metrics', {}).items():
+            lines.append(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     logger.info("Utility functions loaded successfully")
     print("Available utility functions:")
