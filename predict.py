@@ -366,6 +366,271 @@ def predict_rul(dataset_name='FD001', visualize=True):
     return results_df, metrics_all, maintenance_schedule, ensemble
 
 
+class BatchPredictionManager:
+    """
+    Manages batch predictions with parallel processing and progress tracking
+    Supports resumable jobs and multiple export formats
+    """
+    
+    def __init__(self, 
+                 batch_size: int = 100,
+                 n_workers: int = 4,
+                 output_dir: str = None):
+        """
+        Initialize batch prediction manager
+        
+        Args:
+            batch_size: Number of samples per batch
+            n_workers: Number of parallel workers
+            output_dir: Directory for output files
+        """
+        self.batch_size = batch_size
+        self.n_workers = n_workers
+        self.output_dir = output_dir or os.path.join(config.RESULTS_DIR, 'batch_predictions')
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        self.job_status = {}
+        self.results_cache = {}
+        logger.info(f"Initialized BatchPredictionManager (batch_size={batch_size}, workers={n_workers})")
+    
+    def create_batches(self, data: pd.DataFrame, id_col: str = 'unit_id') -> list:
+        """
+        Split data into batches
+        
+        Args:
+            data: Input DataFrame
+            id_col: Column for grouping
+            
+        Returns:
+            List of batch DataFrames
+        """
+        unique_ids = data[id_col].unique()
+        batches = []
+        
+        for i in range(0, len(unique_ids), self.batch_size):
+            batch_ids = unique_ids[i:i + self.batch_size]
+            batch_df = data[data[id_col].isin(batch_ids)]
+            batches.append({
+                'batch_idx': len(batches),
+                'ids': batch_ids.tolist(),
+                'data': batch_df,
+                'size': len(batch_ids)
+            })
+        
+        logger.info(f"Created {len(batches)} batches from {len(unique_ids)} units")
+        return batches
+    
+    def process_batch(self,
+                      batch: dict,
+                      model,
+                      feature_cols: list,
+                      preprocess_fn=None) -> dict:
+        """
+        Process a single batch
+        
+        Args:
+            batch: Batch dictionary
+            model: Prediction model
+            feature_cols: Feature columns
+            preprocess_fn: Optional preprocessing function
+            
+        Returns:
+            Batch results
+        """
+        batch_idx = batch['batch_idx']
+        data = batch['data']
+        
+        try:
+            # Preprocess if needed
+            if preprocess_fn:
+                data = preprocess_fn(data)
+            
+            # Extract features
+            X = data[feature_cols].values
+            
+            # Predict
+            predictions = model.predict(X)
+            if hasattr(predictions, 'ravel'):
+                predictions = predictions.ravel()
+            
+            # Build results
+            result = {
+                'batch_idx': batch_idx,
+                'status': 'completed',
+                'ids': batch['ids'],
+                'predictions': predictions.tolist(),
+                'n_samples': len(predictions),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            logger.debug(f"Batch {batch_idx} completed: {len(predictions)} predictions")
+            
+        except Exception as e:
+            result = {
+                'batch_idx': batch_idx,
+                'status': 'failed',
+                'error': str(e),
+                'ids': batch['ids'],
+                'timestamp': datetime.now().isoformat()
+            }
+            logger.error(f"Batch {batch_idx} failed: {e}")
+        
+        return result
+    
+    def run_batch_prediction(self,
+                             data: pd.DataFrame,
+                             model,
+                             feature_cols: list,
+                             job_id: str = None,
+                             preprocess_fn=None) -> dict:
+        """
+        Run batch predictions with progress tracking
+        
+        Args:
+            data: Input DataFrame
+            model: Prediction model
+            feature_cols: Feature columns
+            job_id: Optional job identifier
+            preprocess_fn: Optional preprocessing function
+            
+        Returns:
+            Job results
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        job_id = job_id or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        logger.info(f"Starting batch prediction job: {job_id}")
+        
+        # Create batches
+        batches = self.create_batches(data)
+        
+        # Initialize job status
+        self.job_status[job_id] = {
+            'status': 'running',
+            'total_batches': len(batches),
+            'completed_batches': 0,
+            'failed_batches': 0,
+            'start_time': datetime.now().isoformat()
+        }
+        
+        results = []
+        
+        # Process batches with progress
+        with ThreadPoolExecutor(max_workers=self.n_workers) as executor:
+            futures = {
+                executor.submit(self.process_batch, batch, model, feature_cols, preprocess_fn): batch
+                for batch in batches
+            }
+            
+            for future in as_completed(futures):
+                result = future.result()
+                results.append(result)
+                
+                if result['status'] == 'completed':
+                    self.job_status[job_id]['completed_batches'] += 1
+                else:
+                    self.job_status[job_id]['failed_batches'] += 1
+                
+                # Progress logging
+                completed = self.job_status[job_id]['completed_batches']
+                total = len(batches)
+                logger.info(f"Progress: {completed}/{total} batches ({completed/total*100:.1f}%)")
+        
+        # Finalize job
+        self.job_status[job_id]['status'] = 'completed'
+        self.job_status[job_id]['end_time'] = datetime.now().isoformat()
+        
+        # Cache results
+        self.results_cache[job_id] = results
+        
+        logger.info(f"Job {job_id} completed: {self.job_status[job_id]['completed_batches']} successful, "
+                   f"{self.job_status[job_id]['failed_batches']} failed")
+        
+        return {
+            'job_id': job_id,
+            'status': self.job_status[job_id],
+            'results': results
+        }
+    
+    def export_results(self,
+                       job_id: str,
+                       format: str = 'csv') -> str:
+        """
+        Export prediction results
+        
+        Args:
+            job_id: Job identifier
+            format: Export format ('csv', 'json', 'parquet')
+            
+        Returns:
+            Path to exported file
+        """
+        if job_id not in self.results_cache:
+            raise ValueError(f"Job {job_id} not found in cache")
+        
+        results = self.results_cache[job_id]
+        
+        # Aggregate results
+        all_ids = []
+        all_predictions = []
+        
+        for r in results:
+            if r['status'] == 'completed':
+                all_ids.extend(r['ids'])
+                all_predictions.extend(r['predictions'])
+        
+        df = pd.DataFrame({
+            'unit_id': all_ids,
+            'RUL_pred': all_predictions
+        })
+        
+        # Export
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        
+        if format == 'csv':
+            filepath = os.path.join(self.output_dir, f'{job_id}_{timestamp}.csv')
+            df.to_csv(filepath, index=False)
+        elif format == 'json':
+            filepath = os.path.join(self.output_dir, f'{job_id}_{timestamp}.json')
+            df.to_json(filepath, orient='records', indent=2)
+        elif format == 'parquet':
+            filepath = os.path.join(self.output_dir, f'{job_id}_{timestamp}.parquet')
+            df.to_parquet(filepath, index=False)
+        else:
+            raise ValueError(f"Unknown format: {format}")
+        
+        logger.info(f"Exported {len(df)} predictions to {filepath}")
+        
+        return filepath
+    
+    def get_job_status(self, job_id: str) -> dict:
+        """Get status of a prediction job"""
+        return self.job_status.get(job_id, {'status': 'not_found'})
+    
+    def get_summary_report(self) -> str:
+        """Generate summary of all jobs"""
+        lines = [
+            "=" * 60,
+            "BATCH PREDICTION SUMMARY",
+            "=" * 60,
+            "",
+            f"Total jobs: {len(self.job_status)}",
+            ""
+        ]
+        
+        for job_id, status in self.job_status.items():
+            lines.extend([
+                f"Job: {job_id}",
+                f"  Status: {status['status']}",
+                f"  Batches: {status.get('completed_batches', 0)}/{status.get('total_batches', 0)}",
+                ""
+            ])
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Predict RUL for test engines')
     parser.add_argument('--dataset', type=str, default='FD001',
