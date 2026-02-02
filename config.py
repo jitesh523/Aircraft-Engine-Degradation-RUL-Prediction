@@ -325,5 +325,225 @@ LOGGING_CONFIG = {
     'datefmt': '%Y-%m-%d %H:%M:%S'
 }
 
+
+class ConfigurationManager:
+    """
+    Dynamic configuration manager with environment overrides
+    Supports loading from YAML/JSON files and validation
+    """
+    
+    def __init__(self, config_file: str = None):
+        """
+        Initialize configuration manager
+        
+        Args:
+            config_file: Path to config file (YAML or JSON)
+        """
+        self.config = {}
+        self.defaults = self._get_defaults()
+        self.config_file = config_file
+        
+        # Load from file if provided
+        if config_file and os.path.exists(config_file):
+            self.load_from_file(config_file)
+        else:
+            self.config = self.defaults.copy()
+        
+        # Apply environment overrides
+        self._apply_env_overrides()
+    
+    def _get_defaults(self) -> dict:
+        """Get default configuration values"""
+        return {
+            'data_dir': DATA_DIR,
+            'models_dir': MODELS_DIR,
+            'results_dir': RESULTS_DIR,
+            'sequence_length': LSTM_CONFIG.get('sequence_length', 30),
+            'random_seed': RANDOM_SEED,
+            'rul_cap': MAX_RUL,
+            'lstm': LSTM_CONFIG.copy(),
+            'logging': LOGGING_CONFIG.copy(),
+            'target_metrics': TARGET_METRICS.copy()
+        }
+    
+    def load_from_file(self, filepath: str):
+        """
+        Load configuration from file
+        
+        Args:
+            filepath: Path to YAML or JSON config file
+        """
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Config file not found: {filepath}")
+        
+        with open(filepath, 'r') as f:
+            if filepath.endswith('.yaml') or filepath.endswith('.yml'):
+                try:
+                    import yaml
+                    loaded = yaml.safe_load(f)
+                except ImportError:
+                    # Fallback if yaml not installed
+                    loaded = {}
+            elif filepath.endswith('.json'):
+                import json
+                loaded = json.load(f)
+            else:
+                raise ValueError(f"Unsupported config format: {filepath}")
+        
+        # Merge with defaults
+        self.config = self._deep_merge(self.defaults, loaded)
+        self.config_file = filepath
+    
+    def _deep_merge(self, base: dict, override: dict) -> dict:
+        """Deep merge two dictionaries"""
+        result = base.copy()
+        
+        for key, value in override.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = self._deep_merge(result[key], value)
+            else:
+                result[key] = value
+        
+        return result
+    
+    def _apply_env_overrides(self):
+        """Apply environment variable overrides"""
+        env_mappings = {
+            'RUL_DATA_DIR': 'data_dir',
+            'RUL_MODELS_DIR': 'models_dir',
+            'RUL_RESULTS_DIR': 'results_dir',
+            'RUL_SEQUENCE_LENGTH': ('sequence_length', int),
+            'RUL_RANDOM_SEED': ('random_seed', int),
+            'RUL_RUL_CAP': ('rul_cap', int),
+            'RUL_LOG_LEVEL': ('logging.level', str)
+        }
+        
+        for env_var, mapping in env_mappings.items():
+            value = os.environ.get(env_var)
+            if value is not None:
+                if isinstance(mapping, tuple):
+                    key, converter = mapping
+                    value = converter(value)
+                else:
+                    key = mapping
+                
+                # Handle nested keys
+                if '.' in key:
+                    parts = key.split('.')
+                    target = self.config
+                    for part in parts[:-1]:
+                        target = target.setdefault(part, {})
+                    target[parts[-1]] = value
+                else:
+                    self.config[key] = value
+    
+    def get(self, key: str, default=None):
+        """
+        Get configuration value
+        
+        Args:
+            key: Dot-separated key path (e.g., 'lstm.units')
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value
+        """
+        parts = key.split('.')
+        value = self.config
+        
+        try:
+            for part in parts:
+                value = value[part]
+            return value
+        except (KeyError, TypeError):
+            return default
+    
+    def set(self, key: str, value):
+        """
+        Set configuration value
+        
+        Args:
+            key: Dot-separated key path
+            value: Value to set
+        """
+        parts = key.split('.')
+        target = self.config
+        
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+        
+        target[parts[-1]] = value
+    
+    def validate(self) -> dict:
+        """
+        Validate configuration
+        
+        Returns:
+            Validation results with any errors/warnings
+        """
+        errors = []
+        warnings = []
+        
+        # Check required directories
+        for dir_key in ['data_dir', 'models_dir', 'results_dir']:
+            path = self.get(dir_key)
+            if not path:
+                errors.append(f"Missing required config: {dir_key}")
+            elif not os.path.exists(path):
+                warnings.append(f"Directory does not exist: {path}")
+        
+        # Check numeric constraints
+        if self.get('sequence_length', 0) <= 0:
+            errors.append("sequence_length must be positive")
+        
+        if self.get('rul_cap', 0) <= 0:
+            errors.append("rul_cap must be positive")
+        
+        return {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings
+        }
+    
+    def save_to_file(self, filepath: str):
+        """
+        Save current configuration to file
+        
+        Args:
+            filepath: Output file path
+        """
+        import json
+        
+        with open(filepath, 'w') as f:
+            json.dump(self.config, f, indent=2)
+    
+    def get_summary(self) -> str:
+        """Get configuration summary"""
+        lines = [
+            "=" * 60,
+            "CONFIGURATION SUMMARY",
+            "=" * 60,
+            f"Config file: {self.config_file or 'None (defaults)'}",
+            "",
+            "Core Settings:"
+        ]
+        
+        for key in ['data_dir', 'models_dir', 'results_dir', 'sequence_length', 'random_seed', 'rul_cap']:
+            lines.append(f"  {key}: {self.get(key)}")
+        
+        lines.extend([
+            "",
+            "LSTM Config:"
+        ])
+        
+        for key, value in self.get('lstm', {}).items():
+            lines.append(f"  {key}: {value}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 print(f"Configuration loaded. Project root: {PROJECT_ROOT}")
 print(f"Dataset directory: {DATA_DIR}")
+
