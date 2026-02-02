@@ -613,6 +613,209 @@ class APIRequestLogger:
         return '\n'.join(lines)
 
 
+class HealthCheckMonitor:
+    """
+    System health monitoring for production deployment
+    Checks memory, disk, GPU, and model readiness
+    """
+    
+    def __init__(self):
+        """Initialize health check monitor"""
+        self.last_check = None
+        self.check_history = []
+        self.thresholds = {
+            'memory_percent': 90,  # Warning if > 90%
+            'disk_percent': 90,    # Warning if > 90%
+            'gpu_memory_percent': 95
+        }
+        logger.info("Initialized HealthCheckMonitor")
+    
+    def check_memory(self) -> dict:
+        """Check system memory usage"""
+        try:
+            import psutil
+            
+            memory = psutil.virtual_memory()
+            
+            return {
+                'status': 'healthy' if memory.percent < self.thresholds['memory_percent'] else 'warning',
+                'total_gb': round(memory.total / (1024**3), 2),
+                'used_gb': round(memory.used / (1024**3), 2),
+                'available_gb': round(memory.available / (1024**3), 2),
+                'percent': memory.percent
+            }
+        except ImportError:
+            return {
+                'status': 'unknown',
+                'error': 'psutil not installed'
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def check_disk(self, path: str = '/') -> dict:
+        """Check disk usage"""
+        try:
+            import psutil
+            
+            disk = psutil.disk_usage(path)
+            
+            return {
+                'status': 'healthy' if disk.percent < self.thresholds['disk_percent'] else 'warning',
+                'path': path,
+                'total_gb': round(disk.total / (1024**3), 2),
+                'used_gb': round(disk.used / (1024**3), 2),
+                'free_gb': round(disk.free / (1024**3), 2),
+                'percent': disk.percent
+            }
+        except ImportError:
+            return {
+                'status': 'unknown',
+                'error': 'psutil not installed'
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def check_gpu(self) -> dict:
+        """Check GPU availability and memory"""
+        try:
+            import tensorflow as tf
+            
+            gpus = tf.config.list_physical_devices('GPU')
+            
+            if not gpus:
+                return {
+                    'status': 'not_available',
+                    'gpus': 0
+                }
+            
+            return {
+                'status': 'available',
+                'gpus': len(gpus),
+                'devices': [gpu.name for gpu in gpus]
+            }
+        except Exception as e:
+            return {
+                'status': 'error',
+                'error': str(e)
+            }
+    
+    def check_model_readiness(self) -> dict:
+        """Check if models are loaded and ready"""
+        global models
+        
+        loaded_models = list(models.keys()) if models else []
+        
+        return {
+            'status': 'ready' if loaded_models else 'not_ready',
+            'loaded_models': loaded_models,
+            'model_count': len(loaded_models)
+        }
+    
+    def check_dependencies(self) -> dict:
+        """Check critical dependencies"""
+        dependencies = {}
+        
+        required_packages = [
+            'numpy', 'pandas', 'sklearn', 'tensorflow',
+            'fastapi', 'pydantic'
+        ]
+        
+        for package in required_packages:
+            try:
+                __import__(package)
+                dependencies[package] = {'status': 'installed'}
+            except ImportError:
+                dependencies[package] = {'status': 'missing'}
+        
+        all_installed = all(d['status'] == 'installed' for d in dependencies.values())
+        
+        return {
+            'status': 'healthy' if all_installed else 'degraded',
+            'packages': dependencies
+        }
+    
+    def run_full_check(self) -> dict:
+        """Run all health checks"""
+        self.last_check = datetime.now()
+        
+        check_result = {
+            'timestamp': self.last_check.isoformat(),
+            'memory': self.check_memory(),
+            'disk': self.check_disk(),
+            'gpu': self.check_gpu(),
+            'models': self.check_model_readiness(),
+            'dependencies': self.check_dependencies()
+        }
+        
+        # Determine overall status
+        statuses = [
+            check_result['memory'].get('status', 'unknown'),
+            check_result['disk'].get('status', 'unknown'),
+            check_result['models'].get('status', 'unknown'),
+            check_result['dependencies'].get('status', 'unknown')
+        ]
+        
+        if 'error' in statuses or 'not_ready' in statuses:
+            overall = 'unhealthy'
+        elif 'warning' in statuses or 'degraded' in statuses:
+            overall = 'degraded'
+        else:
+            overall = 'healthy'
+        
+        check_result['overall_status'] = overall
+        
+        # Store in history
+        self.check_history.append({
+            'timestamp': self.last_check.isoformat(),
+            'status': overall
+        })
+        
+        # Keep last 100 checks
+        self.check_history = self.check_history[-100:]
+        
+        logger.info(f"Health check completed: {overall}")
+        
+        return check_result
+    
+    def get_quick_status(self) -> dict:
+        """Get quick health status"""
+        return {
+            'status': self.check_history[-1]['status'] if self.check_history else 'unknown',
+            'last_check': self.last_check.isoformat() if self.last_check else None,
+            'models_ready': self.check_model_readiness()['status'] == 'ready'
+        }
+    
+    def get_health_summary(self) -> str:
+        """Generate health summary report"""
+        check = self.run_full_check()
+        
+        lines = [
+            "=" * 60,
+            "SYSTEM HEALTH SUMMARY",
+            "=" * 60,
+            f"Overall Status: {check['overall_status'].upper()}",
+            f"Timestamp: {check['timestamp']}",
+            "",
+            f"Memory: {check['memory'].get('status', 'unknown')} "
+            f"({check['memory'].get('percent', 'N/A')}% used)",
+            f"Disk: {check['disk'].get('status', 'unknown')} "
+            f"({check['disk'].get('percent', 'N/A')}% used)",
+            f"GPU: {check['gpu'].get('status', 'unknown')}",
+            f"Models: {check['models'].get('status', 'unknown')} "
+            f"({check['models'].get('model_count', 0)} loaded)",
+            f"Dependencies: {check['dependencies'].get('status', 'unknown')}",
+            "=" * 60
+        ]
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     import uvicorn
     
