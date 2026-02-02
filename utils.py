@@ -1174,6 +1174,255 @@ class ExperimentTracker:
         return '\n'.join(lines)
 
 
+class ModelSerializer:
+    """
+    Versioned model serialization with registry and rollback support
+    Manages model versions with metadata and changelog
+    """
+    
+    def __init__(self, registry_dir: str = None):
+        """
+        Initialize model serializer
+        
+        Args:
+            registry_dir: Directory for model registry
+        """
+        self.registry_dir = registry_dir or os.path.join(config.MODELS_DIR, 'registry')
+        os.makedirs(self.registry_dir, exist_ok=True)
+        
+        self.registry = {}
+        self.changelog = []
+        self._load_registry()
+        logger.info(f"Initialized ModelSerializer (registry: {self.registry_dir})")
+    
+    def _load_registry(self):
+        """Load model registry from disk"""
+        registry_file = os.path.join(self.registry_dir, 'registry.json')
+        if os.path.exists(registry_file):
+            with open(registry_file, 'r') as f:
+                self.registry = json.load(f)
+        
+        changelog_file = os.path.join(self.registry_dir, 'changelog.json')
+        if os.path.exists(changelog_file):
+            with open(changelog_file, 'r') as f:
+                self.changelog = json.load(f)
+    
+    def _save_registry(self):
+        """Save registry to disk"""
+        registry_file = os.path.join(self.registry_dir, 'registry.json')
+        with open(registry_file, 'w') as f:
+            json.dump(self.registry, f, indent=2)
+        
+        changelog_file = os.path.join(self.registry_dir, 'changelog.json')
+        with open(changelog_file, 'w') as f:
+            json.dump(self.changelog, f, indent=2)
+    
+    def save_model(self,
+                   model,
+                   model_name: str,
+                   version: str = None,
+                   metrics: Dict[str, float] = None,
+                   description: str = '') -> Dict:
+        """
+        Save model with version and metadata
+        
+        Args:
+            model: Model object to save
+            model_name: Name of the model
+            version: Version string (auto-generated if None)
+            metrics: Performance metrics
+            description: Version description
+            
+        Returns:
+            Model version metadata
+        """
+        # Generate version
+        if version is None:
+            existing = self.registry.get(model_name, {}).get('versions', [])
+            version = f"v{len(existing) + 1}.0.0"
+        
+        # Create version directory
+        version_dir = os.path.join(self.registry_dir, model_name, version)
+        os.makedirs(version_dir, exist_ok=True)
+        
+        # Save model
+        model_path = os.path.join(version_dir, 'model.pkl')
+        with open(model_path, 'wb') as f:
+            pickle.dump(model, f)
+        
+        # Create metadata
+        metadata = {
+            'model_name': model_name,
+            'version': version,
+            'created_at': datetime.now().isoformat(),
+            'model_path': model_path,
+            'metrics': metrics or {},
+            'description': description,
+            'model_type': type(model).__name__
+        }
+        
+        # Save metadata
+        metadata_path = os.path.join(version_dir, 'metadata.json')
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        # Update registry
+        if model_name not in self.registry:
+            self.registry[model_name] = {
+                'versions': [],
+                'latest': None,
+                'production': None
+            }
+        
+        self.registry[model_name]['versions'].append(version)
+        self.registry[model_name]['latest'] = version
+        
+        # Add to changelog
+        self.changelog.append({
+            'timestamp': datetime.now().isoformat(),
+            'action': 'save',
+            'model_name': model_name,
+            'version': version,
+            'description': description
+        })
+        
+        self._save_registry()
+        
+        logger.info(f"Saved model {model_name} version {version}")
+        
+        return metadata
+    
+    def load_model(self,
+                   model_name: str,
+                   version: str = None) -> Any:
+        """
+        Load model from registry
+        
+        Args:
+            model_name: Name of the model
+            version: Version to load (None = latest)
+            
+        Returns:
+            Loaded model object
+        """
+        if model_name not in self.registry:
+            raise ValueError(f"Model {model_name} not found in registry")
+        
+        if version is None:
+            version = self.registry[model_name]['latest']
+        
+        if version not in self.registry[model_name]['versions']:
+            raise ValueError(f"Version {version} not found for {model_name}")
+        
+        model_path = os.path.join(self.registry_dir, model_name, version, 'model.pkl')
+        
+        with open(model_path, 'rb') as f:
+            model = pickle.load(f)
+        
+        logger.info(f"Loaded model {model_name} version {version}")
+        
+        return model
+    
+    def promote_to_production(self, model_name: str, version: str):
+        """
+        Promote a model version to production
+        
+        Args:
+            model_name: Model name
+            version: Version to promote
+        """
+        if model_name not in self.registry:
+            raise ValueError(f"Model {model_name} not found")
+        
+        if version not in self.registry[model_name]['versions']:
+            raise ValueError(f"Version {version} not found")
+        
+        old_prod = self.registry[model_name]['production']
+        self.registry[model_name]['production'] = version
+        
+        self.changelog.append({
+            'timestamp': datetime.now().isoformat(),
+            'action': 'promote',
+            'model_name': model_name,
+            'version': version,
+            'previous_production': old_prod
+        })
+        
+        self._save_registry()
+        
+        logger.info(f"Promoted {model_name} {version} to production")
+    
+    def rollback(self, model_name: str, to_version: str = None):
+        """
+        Rollback to a previous version
+        
+        Args:
+            model_name: Model name
+            to_version: Version to rollback to (None = previous)
+        """
+        if model_name not in self.registry:
+            raise ValueError(f"Model {model_name} not found")
+        
+        versions = self.registry[model_name]['versions']
+        current = self.registry[model_name]['production'] or self.registry[model_name]['latest']
+        
+        if to_version is None:
+            current_idx = versions.index(current)
+            if current_idx == 0:
+                raise ValueError("Already at earliest version")
+            to_version = versions[current_idx - 1]
+        
+        self.registry[model_name]['production'] = to_version
+        
+        self.changelog.append({
+            'timestamp': datetime.now().isoformat(),
+            'action': 'rollback',
+            'model_name': model_name,
+            'from_version': current,
+            'to_version': to_version
+        })
+        
+        self._save_registry()
+        
+        logger.info(f"Rolled back {model_name} from {current} to {to_version}")
+    
+    def list_versions(self, model_name: str) -> List[Dict]:
+        """List all versions of a model"""
+        if model_name not in self.registry:
+            return []
+        
+        versions = []
+        for ver in self.registry[model_name]['versions']:
+            metadata_path = os.path.join(self.registry_dir, model_name, ver, 'metadata.json')
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    versions.append(json.load(f))
+        
+        return versions
+    
+    def get_registry_summary(self) -> str:
+        """Generate registry summary"""
+        lines = [
+            "=" * 60,
+            "MODEL REGISTRY SUMMARY",
+            "=" * 60,
+            ""
+        ]
+        
+        for model_name, info in self.registry.items():
+            lines.extend([
+                f"Model: {model_name}",
+                f"  Versions: {len(info['versions'])}",
+                f"  Latest: {info['latest']}",
+                f"  Production: {info['production'] or 'None'}",
+                ""
+            ])
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     logger.info("Utility functions loaded successfully")
     print("Available utility functions:")
