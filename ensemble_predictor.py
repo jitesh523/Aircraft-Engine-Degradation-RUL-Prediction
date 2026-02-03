@@ -523,6 +523,283 @@ class AdaptiveEnsembleOptimizer:
         }
 
 
+class DynamicEnsembleOptimizer:
+    """
+    Dynamic ensemble optimization with automatic weight tuning
+    and model selection based on recent performance
+    """
+    
+    def __init__(self, 
+                 cv_folds: int = 5,
+                 optimization_metric: str = 'rmse'):
+        """
+        Initialize dynamic ensemble optimizer
+        
+        Args:
+            cv_folds: Number of cross-validation folds
+            optimization_metric: Metric to optimize ('rmse', 'mae', 'r2')
+        """
+        self.cv_folds = cv_folds
+        self.optimization_metric = optimization_metric
+        self.optimized_weights = {}
+        self.model_scores = {}
+        self.excluded_models = set()
+        self.optimization_history = []
+        logger.info(f"Initialized DynamicEnsembleOptimizer (cv={cv_folds}, metric={optimization_metric})")
+    
+    def cross_validate_weights(self,
+                               predictions_dict: Dict[str, np.ndarray],
+                               y_true: np.ndarray) -> Dict[str, float]:
+        """
+        Optimize weights using cross-validation
+        
+        Args:
+            predictions_dict: Dictionary of {model_name: predictions}
+            y_true: True RUL values
+            
+        Returns:
+            Optimized weights dictionary
+        """
+        from sklearn.model_selection import KFold
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        
+        logger.info("Optimizing weights via cross-validation...")
+        
+        model_names = list(predictions_dict.keys())
+        n_models = len(model_names)
+        
+        if n_models < 2:
+            return {model_names[0]: 1.0} if n_models == 1 else {}
+        
+        # Stack predictions
+        pred_matrix = np.column_stack([predictions_dict[name] for name in model_names])
+        
+        # Cross-validate to find best weights
+        kf = KFold(n_splits=self.cv_folds, shuffle=True, random_state=42)
+        
+        best_weights = np.ones(n_models) / n_models
+        best_score = float('inf')
+        
+        # Grid search over weight simplex
+        weight_grid = self._generate_weight_grid(n_models, steps=10)
+        
+        for weights in weight_grid:
+            fold_scores = []
+            
+            for train_idx, val_idx in kf.split(pred_matrix):
+                val_preds = pred_matrix[val_idx]
+                val_true = y_true[val_idx]
+                
+                ensemble_pred = np.dot(val_preds, weights)
+                
+                if self.optimization_metric == 'rmse':
+                    score = np.sqrt(mean_squared_error(val_true, ensemble_pred))
+                elif self.optimization_metric == 'mae':
+                    score = mean_absolute_error(val_true, ensemble_pred)
+                else:
+                    score = -r2_score(val_true, ensemble_pred)  # Negate for minimization
+                
+                fold_scores.append(score)
+            
+            mean_score = np.mean(fold_scores)
+            
+            if mean_score < best_score:
+                best_score = mean_score
+                best_weights = weights
+        
+        # Store results
+        self.optimized_weights = dict(zip(model_names, best_weights))
+        
+        self.optimization_history.append({
+            'timestamp': pd.Timestamp.now().isoformat(),
+            'weights': self.optimized_weights.copy(),
+            'score': best_score,
+            'metric': self.optimization_metric
+        })
+        
+        logger.info(f"Optimized weights: {self.optimized_weights}")
+        logger.info(f"Best CV score ({self.optimization_metric}): {best_score:.4f}")
+        
+        return self.optimized_weights
+    
+    def _generate_weight_grid(self, n_models: int, steps: int = 10) -> List[np.ndarray]:
+        """Generate weight combinations that sum to 1"""
+        from itertools import product
+        
+        if n_models == 2:
+            weights_list = []
+            for w0 in np.linspace(0, 1, steps + 1):
+                weights_list.append(np.array([w0, 1 - w0]))
+            return weights_list
+        
+        elif n_models == 3:
+            weights_list = []
+            for w0 in np.linspace(0, 1, steps + 1):
+                for w1 in np.linspace(0, 1 - w0, steps + 1):
+                    w2 = 1 - w0 - w1
+                    if w2 >= 0:
+                        weights_list.append(np.array([w0, w1, w2]))
+            return weights_list
+        
+        else:
+            # For more models, use random sampling
+            np.random.seed(42)
+            weights_list = []
+            for _ in range(steps * 20):
+                w = np.random.dirichlet(np.ones(n_models))
+                weights_list.append(w)
+            return weights_list
+    
+    def evaluate_model_performance(self,
+                                   predictions_dict: Dict[str, np.ndarray],
+                                   y_true: np.ndarray) -> Dict[str, Dict]:
+        """
+        Evaluate individual model performance
+        
+        Args:
+            predictions_dict: Dictionary of model predictions
+            y_true: True values
+            
+        Returns:
+            Performance scores for each model
+        """
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        
+        scores = {}
+        
+        for name, preds in predictions_dict.items():
+            rmse = np.sqrt(mean_squared_error(y_true, preds))
+            mae = mean_absolute_error(y_true, preds)
+            r2 = r2_score(y_true, preds)
+            
+            scores[name] = {
+                'rmse': rmse,
+                'mae': mae,
+                'r2': r2,
+                'rank': 0  # Will be set below
+            }
+        
+        # Rank models by RMSE
+        sorted_models = sorted(scores.keys(), key=lambda x: scores[x]['rmse'])
+        for rank, name in enumerate(sorted_models, 1):
+            scores[name]['rank'] = rank
+        
+        self.model_scores = scores
+        
+        return scores
+    
+    def select_best_models(self,
+                          predictions_dict: Dict[str, np.ndarray],
+                          y_true: np.ndarray,
+                          top_k: int = None,
+                          min_improvement: float = 0.95) -> Dict[str, np.ndarray]:
+        """
+        Select best models for ensemble based on performance
+        
+        Args:
+            predictions_dict: All model predictions
+            y_true: True values
+            top_k: Number of top models to select (None = auto)
+            min_improvement: Min relative performance vs best model
+            
+        Returns:
+            Filtered predictions dictionary
+        """
+        scores = self.evaluate_model_performance(predictions_dict, y_true)
+        
+        # Sort by RMSE
+        sorted_models = sorted(scores.keys(), key=lambda x: scores[x]['rmse'])
+        best_rmse = scores[sorted_models[0]]['rmse']
+        
+        if top_k:
+            selected = sorted_models[:top_k]
+        else:
+            # Auto-select based on performance threshold
+            selected = []
+            for name in sorted_models:
+                if scores[name]['rmse'] <= best_rmse / min_improvement:
+                    selected.append(name)
+            
+            # At least include top 2
+            if len(selected) < 2 and len(sorted_models) >= 2:
+                selected = sorted_models[:2]
+        
+        self.excluded_models = set(predictions_dict.keys()) - set(selected)
+        
+        logger.info(f"Selected {len(selected)} models: {selected}")
+        if self.excluded_models:
+            logger.info(f"Excluded: {self.excluded_models}")
+        
+        return {name: predictions_dict[name] for name in selected}
+    
+    def get_ensemble_prediction(self,
+                               predictions_dict: Dict[str, np.ndarray]) -> np.ndarray:
+        """
+        Get ensemble prediction using optimized weights
+        
+        Args:
+            predictions_dict: Model predictions
+            
+        Returns:
+            Ensemble predictions
+        """
+        if not self.optimized_weights:
+            # Equal weights fallback
+            weights = {name: 1.0 / len(predictions_dict) for name in predictions_dict}
+        else:
+            weights = self.optimized_weights
+        
+        # Filter to only active models
+        active_preds = {k: v for k, v in predictions_dict.items() 
+                       if k not in self.excluded_models and k in weights}
+        
+        if not active_preds:
+            active_preds = predictions_dict
+            weights = {name: 1.0 / len(active_preds) for name in active_preds}
+        
+        # Renormalize weights
+        total = sum(weights.get(k, 0) for k in active_preds)
+        if total == 0:
+            total = 1
+        
+        ensemble_pred = sum(active_preds[name] * weights.get(name, 0) / total 
+                           for name in active_preds)
+        
+        return ensemble_pred
+    
+    def get_optimization_summary(self) -> str:
+        """Generate optimization summary"""
+        lines = [
+            "=" * 60,
+            "ENSEMBLE OPTIMIZATION SUMMARY",
+            "=" * 60,
+            ""
+        ]
+        
+        if self.optimized_weights:
+            lines.append("Optimized Weights:")
+            for name, weight in self.optimized_weights.items():
+                status = " (excluded)" if name in self.excluded_models else ""
+                lines.append(f"  {name}: {weight:.4f}{status}")
+        
+        if self.model_scores:
+            lines.extend(["", "Model Performance:"])
+            for name, scores in self.model_scores.items():
+                lines.append(f"  {name}: RMSE={scores['rmse']:.2f}, Rank={scores['rank']}")
+        
+        if self.optimization_history:
+            last = self.optimization_history[-1]
+            lines.extend([
+                "",
+                f"Last Optimization: {last['timestamp']}",
+                f"Best Score ({last['metric']}): {last['score']:.4f}"
+            ])
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test ensemble predictor
     print("="*60)
