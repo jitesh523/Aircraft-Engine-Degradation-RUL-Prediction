@@ -595,6 +595,273 @@ class DataPipelineValidator:
         print("\n" + "="*60)
 
 
+class DataAugmentor:
+    """
+    Data augmentation for time-series sensor data
+    Includes noise injection, time warping, and oversampling
+    """
+    
+    def __init__(self, random_seed: int = 42):
+        """
+        Initialize data augmentor
+        
+        Args:
+            random_seed: Random seed for reproducibility
+        """
+        self.random_seed = random_seed
+        np.random.seed(random_seed)
+        self.augmentation_stats = {}
+        logger.info(f"Initialized DataAugmentor (seed={random_seed})")
+    
+    def add_gaussian_noise(self,
+                          data: np.ndarray,
+                          noise_level: float = 0.01) -> np.ndarray:
+        """
+        Add Gaussian noise to sensor data
+        
+        Args:
+            data: Input data array
+            noise_level: Standard deviation of noise relative to data std
+            
+        Returns:
+            Augmented data with noise
+        """
+        noise = np.random.normal(0, noise_level * np.std(data), data.shape)
+        augmented = data + noise
+        
+        self.augmentation_stats['gaussian_noise'] = {
+            'samples_augmented': len(data),
+            'noise_level': noise_level
+        }
+        
+        return augmented
+    
+    def time_warp(self,
+                  sequences: np.ndarray,
+                  warp_factor: float = 0.1) -> np.ndarray:
+        """
+        Apply time warping to sequences
+        
+        Args:
+            sequences: Input sequences (n_samples, seq_len, features)
+            warp_factor: Maximum warping factor
+            
+        Returns:
+            Time-warped sequences
+        """
+        if len(sequences.shape) != 3:
+            logger.warning("Time warp expects 3D sequences (samples, time, features)")
+            return sequences
+        
+        n_samples, seq_len, n_features = sequences.shape
+        warped = np.zeros_like(sequences)
+        
+        for i in range(n_samples):
+            # Random warp factor per sample
+            warp = 1 + np.random.uniform(-warp_factor, warp_factor)
+            
+            # Generate warped indices
+            original_indices = np.arange(seq_len)
+            warped_indices = np.linspace(0, seq_len - 1, int(seq_len * warp))
+            
+            # Interpolate for each feature
+            for j in range(n_features):
+                warped[i, :, j] = np.interp(
+                    original_indices,
+                    np.linspace(0, seq_len - 1, len(warped_indices)),
+                    sequences[i, :int(len(warped_indices)), j] if warp > 1 else np.interp(
+                        np.linspace(0, len(warped_indices) - 1, seq_len),
+                        np.arange(len(warped_indices)),
+                        sequences[i, :, j][:len(warped_indices)]
+                    )
+                )
+        
+        self.augmentation_stats['time_warp'] = {
+            'samples_warped': n_samples,
+            'warp_factor': warp_factor
+        }
+        
+        return warped
+    
+    def magnitude_scale(self,
+                        data: np.ndarray,
+                        scale_range: Tuple[float, float] = (0.9, 1.1)) -> np.ndarray:
+        """
+        Apply random magnitude scaling to data
+        
+        Args:
+            data: Input data
+            scale_range: Min and max scale factors
+            
+        Returns:
+            Scaled data
+        """
+        scale_factors = np.random.uniform(scale_range[0], scale_range[1], data.shape)
+        scaled = data * scale_factors
+        
+        self.augmentation_stats['magnitude_scale'] = {
+            'samples_scaled': len(data),
+            'scale_range': scale_range
+        }
+        
+        return scaled
+    
+    def oversample_critical_rul(self,
+                                df: pd.DataFrame,
+                                rul_column: str = 'RUL',
+                                threshold: int = 30,
+                                factor: int = 2) -> pd.DataFrame:
+        """
+        Oversample data points with critical (low) RUL values
+        
+        Args:
+            df: Input DataFrame
+            rul_column: Name of RUL column
+            threshold: RUL threshold for critical samples
+            factor: Oversampling factor
+            
+        Returns:
+            Augmented DataFrame with oversampled critical points
+        """
+        if rul_column not in df.columns:
+            logger.warning(f"RUL column '{rul_column}' not found")
+            return df
+        
+        critical_mask = df[rul_column] <= threshold
+        critical_samples = df[critical_mask]
+        n_critical = len(critical_samples)
+        
+        if n_critical == 0:
+            logger.warning("No critical samples found")
+            return df
+        
+        # Replicate critical samples
+        augmented_critical = pd.concat([critical_samples] * factor, ignore_index=True)
+        
+        # Add slight noise to replicated samples
+        numeric_cols = augmented_critical.select_dtypes(include=[np.number]).columns
+        sensor_cols = [c for c in numeric_cols if 'sensor' in c]
+        
+        for col in sensor_cols:
+            noise = np.random.normal(0, 0.01 * augmented_critical[col].std(), 
+                                    len(augmented_critical))
+            augmented_critical[col] = augmented_critical[col] + noise
+        
+        result = pd.concat([df, augmented_critical], ignore_index=True)
+        
+        self.augmentation_stats['oversample_critical'] = {
+            'original_critical': n_critical,
+            'added_samples': len(augmented_critical),
+            'threshold': threshold
+        }
+        
+        logger.info(f"Oversampled {n_critical} critical samples by {factor}x "
+                   f"(added {len(augmented_critical)} samples)")
+        
+        return result
+    
+    def create_synthetic_degradation(self,
+                                     df: pd.DataFrame,
+                                     n_synthetic: int = 10) -> pd.DataFrame:
+        """
+        Create synthetic degradation sequences
+        
+        Args:
+            df: Input DataFrame with engine data
+            n_synthetic: Number of synthetic engines to generate
+            
+        Returns:
+            DataFrame with synthetic data appended
+        """
+        if 'unit_id' not in df.columns:
+            return df
+        
+        # Get statistics from existing engines
+        engine_groups = df.groupby('unit_id')
+        
+        synthetic_dfs = []
+        max_unit_id = df['unit_id'].max()
+        
+        for i in range(n_synthetic):
+            # Select random engine as template
+            template_id = np.random.choice(df['unit_id'].unique())
+            template_data = engine_groups.get_group(template_id).copy()
+            
+            # Create synthetic version with modifications
+            template_data['unit_id'] = max_unit_id + i + 1
+            
+            # Add noise to sensors
+            sensor_cols = [c for c in template_data.columns if 'sensor' in c]
+            for col in sensor_cols:
+                noise = np.random.normal(0, 0.02 * template_data[col].std(),
+                                        len(template_data))
+                template_data[col] = template_data[col] + noise
+            
+            synthetic_dfs.append(template_data)
+        
+        result = pd.concat([df] + synthetic_dfs, ignore_index=True)
+        
+        self.augmentation_stats['synthetic_degradation'] = {
+            'synthetic_engines': n_synthetic,
+            'total_synthetic_samples': sum(len(s) for s in synthetic_dfs)
+        }
+        
+        logger.info(f"Created {n_synthetic} synthetic engines")
+        
+        return result
+    
+    def augment_pipeline(self,
+                         df: pd.DataFrame,
+                         oversample: bool = True,
+                         add_noise: bool = True,
+                         synthetic: int = 0) -> pd.DataFrame:
+        """
+        Apply full augmentation pipeline
+        
+        Args:
+            df: Input DataFrame
+            oversample: Whether to oversample critical RUL
+            add_noise: Whether to add Gaussian noise
+            synthetic: Number of synthetic engines (0 to skip)
+            
+        Returns:
+            Augmented DataFrame
+        """
+        result = df.copy()
+        
+        if oversample:
+            result = self.oversample_critical_rul(result)
+        
+        if add_noise:
+            sensor_cols = [c for c in result.columns if 'sensor' in c]
+            for col in sensor_cols:
+                result[col] = self.add_gaussian_noise(result[col].values)
+        
+        if synthetic > 0:
+            result = self.create_synthetic_degradation(df, synthetic)
+        
+        return result
+    
+    def get_augmentation_summary(self) -> str:
+        """Generate augmentation summary"""
+        lines = [
+            "=" * 60,
+            "DATA AUGMENTATION SUMMARY",
+            "=" * 60,
+            ""
+        ]
+        
+        for method, stats in self.augmentation_stats.items():
+            lines.append(f"{method}:")
+            for key, value in stats.items():
+                lines.append(f"  {key}: {value}")
+            lines.append("")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test the preprocessor
     from data_loader import load_dataset
