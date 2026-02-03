@@ -547,6 +547,202 @@ class AutoRetrainer:
         return '\n'.join(lines)
 
 
+class PipelineOrchestrator:
+    """
+    Orchestrate multi-step ML pipelines
+    Handles step execution, dependencies, and recovery
+    """
+    
+    def __init__(self, name: str = 'pipeline'):
+        """Initialize pipeline orchestrator"""
+        self.name = name
+        self.steps = []
+        self.step_status = {}
+        self.execution_log = []
+        self.checkpoints = {}
+        logger.info(f"Initialized PipelineOrchestrator: {name}")
+    
+    def add_step(self,
+                 name: str,
+                 func: callable,
+                 dependencies: List[str] = None,
+                 retry_count: int = 0):
+        """
+        Add a step to the pipeline
+        
+        Args:
+            name: Step name
+            func: Step function to execute
+            dependencies: List of step names this depends on
+            retry_count: Number of retries on failure
+        """
+        step = {
+            'name': name,
+            'func': func,
+            'dependencies': dependencies or [],
+            'retry_count': retry_count,
+            'status': 'pending'
+        }
+        
+        self.steps.append(step)
+        self.step_status[name] = 'pending'
+        
+        logger.info(f"Added step: {name} (deps: {dependencies or 'none'})")
+    
+    def _can_run_step(self, step: Dict) -> bool:
+        """Check if step dependencies are satisfied"""
+        for dep in step['dependencies']:
+            if self.step_status.get(dep) != 'completed':
+                return False
+        return True
+    
+    def _execute_step(self, step: Dict) -> Dict:
+        """Execute a single step with retry logic"""
+        import time
+        
+        name = step['name']
+        retries = step['retry_count']
+        
+        for attempt in range(retries + 1):
+            try:
+                start = time.time()
+                self.step_status[name] = 'running'
+                
+                result = step['func']()
+                
+                elapsed = time.time() - start
+                
+                self.step_status[name] = 'completed'
+                self.checkpoints[name] = result
+                
+                log_entry = {
+                    'step': name,
+                    'status': 'completed',
+                    'attempt': attempt + 1,
+                    'duration': elapsed,
+                    'timestamp': datetime.now().isoformat()
+                }
+                
+                self.execution_log.append(log_entry)
+                logger.info(f"Step '{name}' completed in {elapsed:.2f}s")
+                
+                return {'status': 'completed', 'result': result, 'duration': elapsed}
+                
+            except Exception as e:
+                logger.warning(f"Step '{name}' failed (attempt {attempt + 1}): {e}")
+                
+                if attempt == retries:
+                    self.step_status[name] = 'failed'
+                    
+                    self.execution_log.append({
+                        'step': name,
+                        'status': 'failed',
+                        'attempt': attempt + 1,
+                        'error': str(e),
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    
+                    return {'status': 'failed', 'error': str(e)}
+        
+        return {'status': 'failed'}
+    
+    def run(self, resume_from: str = None) -> Dict:
+        """
+        Run the pipeline
+        
+        Args:
+            resume_from: Step name to resume from (skip earlier steps)
+            
+        Returns:
+            Pipeline execution results
+        """
+        import time
+        
+        start_time = time.time()
+        results = {}
+        resume_mode = resume_from is not None
+        found_resume = False
+        
+        logger.info(f"Starting pipeline: {self.name}")
+        
+        for step in self.steps:
+            name = step['name']
+            
+            if resume_mode and not found_resume:
+                if name == resume_from:
+                    found_resume = True
+                else:
+                    self.step_status[name] = 'skipped'
+                    continue
+            
+            if not self._can_run_step(step):
+                logger.warning(f"Skipping step '{name}' - dependencies not satisfied")
+                self.step_status[name] = 'blocked'
+                results[name] = {'status': 'blocked'}
+                continue
+            
+            result = self._execute_step(step)
+            results[name] = result
+            
+            if result['status'] == 'failed':
+                logger.error(f"Pipeline stopped at step '{name}'")
+                break
+        
+        total_time = time.time() - start_time
+        
+        pipeline_result = {
+            'pipeline': self.name,
+            'total_time': total_time,
+            'steps_completed': sum(1 for s in self.step_status.values() if s == 'completed'),
+            'steps_failed': sum(1 for s in self.step_status.values() if s == 'failed'),
+            'step_results': results
+        }
+        
+        logger.info(f"Pipeline completed in {total_time:.2f}s")
+        
+        return pipeline_result
+    
+    def get_checkpoint(self, step_name: str):
+        """Get checkpoint data for a step"""
+        return self.checkpoints.get(step_name)
+    
+    def reset(self):
+        """Reset pipeline state"""
+        for step in self.steps:
+            step['status'] = 'pending'
+            self.step_status[step['name']] = 'pending'
+        self.checkpoints = {}
+        self.execution_log = []
+        logger.info("Pipeline reset")
+    
+    def get_pipeline_summary(self) -> str:
+        """Generate pipeline summary"""
+        lines = [
+            "=" * 60,
+            f"PIPELINE: {self.name}",
+            "=" * 60,
+            f"Steps: {len(self.steps)}",
+            ""
+        ]
+        
+        for step in self.steps:
+            name = step['name']
+            status = self.step_status.get(name, 'pending')
+            deps = ', '.join(step['dependencies']) if step['dependencies'] else 'none'
+            
+            status_icon = '✓' if status == 'completed' else '✗' if status == 'failed' else '○'
+            lines.append(f"  {status_icon} {name} (deps: {deps})")
+        
+        completed = sum(1 for s in self.step_status.values() if s == 'completed')
+        lines.extend([
+            "",
+            f"Completed: {completed}/{len(self.steps)}",
+            "=" * 60
+        ])
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train RUL prediction models')
     parser.add_argument('--dataset', type=str, default='FD001',
