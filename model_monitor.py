@@ -645,6 +645,259 @@ class ConceptDriftDetector:
         return report
 
 
+class AlertManager:
+    """
+    Alert management for RUL predictions and drift detection
+    Handles thresholds, notifications, and alert history
+    """
+    
+    def __init__(self):
+        """Initialize alert manager"""
+        self.thresholds = {
+            'critical_rul': 15,     # Immediate attention
+            'warning_rul': 30,      # Schedule maintenance
+            'caution_rul': 50,      # Monitor closely
+            'drift_psi': 0.2,       # Significant drift
+            'error_rate': 0.1       # High error rate
+        }
+        
+        self.alert_history = []
+        self.acknowledged_alerts = set()
+        self.notification_channels = ['log']
+        
+        logger.info("Initialized AlertManager")
+    
+    def configure_thresholds(self, thresholds: Dict[str, float]):
+        """
+        Configure alert thresholds
+        
+        Args:
+            thresholds: Dictionary of threshold values
+        """
+        self.thresholds.update(thresholds)
+        logger.info(f"Updated thresholds: {thresholds}")
+    
+    def add_notification_channel(self, channel: str):
+        """Add a notification channel"""
+        if channel not in self.notification_channels:
+            self.notification_channels.append(channel)
+    
+    def check_rul_alerts(self,
+                         unit_id: int,
+                         rul: float) -> Dict:
+        """
+        Check if RUL prediction triggers alerts
+        
+        Args:
+            unit_id: Engine unit ID
+            rul: Predicted RUL value
+            
+        Returns:
+            Alert information if triggered
+        """
+        alert = None
+        
+        if rul <= self.thresholds['critical_rul']:
+            alert = self._create_alert(
+                alert_type='CRITICAL',
+                source=f'Engine {unit_id}',
+                message=f'RUL = {rul:.1f} cycles - IMMEDIATE ACTION REQUIRED',
+                severity='critical',
+                rul=rul
+            )
+        elif rul <= self.thresholds['warning_rul']:
+            alert = self._create_alert(
+                alert_type='WARNING',
+                source=f'Engine {unit_id}',
+                message=f'RUL = {rul:.1f} cycles - Schedule maintenance',
+                severity='high',
+                rul=rul
+            )
+        elif rul <= self.thresholds['caution_rul']:
+            alert = self._create_alert(
+                alert_type='CAUTION',
+                source=f'Engine {unit_id}',
+                message=f'RUL = {rul:.1f} cycles - Monitor closely',
+                severity='medium',
+                rul=rul
+            )
+        
+        if alert:
+            self._dispatch_alert(alert)
+        
+        return alert
+    
+    def check_drift_alert(self,
+                          psi_score: float,
+                          feature_name: str = 'prediction') -> Dict:
+        """
+        Check if drift triggers alert
+        
+        Args:
+            psi_score: PSI drift score
+            feature_name: Name of feature with drift
+            
+        Returns:
+            Alert if triggered
+        """
+        if psi_score >= self.thresholds['drift_psi']:
+            alert = self._create_alert(
+                alert_type='DRIFT',
+                source=f'Feature: {feature_name}',
+                message=f'PSI = {psi_score:.4f} - Model drift detected',
+                severity='high',
+                psi=psi_score
+            )
+            self._dispatch_alert(alert)
+            return alert
+        
+        return None
+    
+    def check_batch_alerts(self,
+                           predictions: List[Tuple[int, float]]) -> List[Dict]:
+        """
+        Check batch of predictions for alerts
+        
+        Args:
+            predictions: List of (unit_id, rul) tuples
+            
+        Returns:
+            List of triggered alerts
+        """
+        alerts = []
+        
+        for unit_id, rul in predictions:
+            alert = self.check_rul_alerts(unit_id, rul)
+            if alert:
+                alerts.append(alert)
+        
+        return alerts
+    
+    def _create_alert(self,
+                      alert_type: str,
+                      source: str,
+                      message: str,
+                      severity: str,
+                      **kwargs) -> Dict:
+        """Create alert record"""
+        alert_id = f"alert_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(self.alert_history)}"
+        
+        alert = {
+            'alert_id': alert_id,
+            'type': alert_type,
+            'source': source,
+            'message': message,
+            'severity': severity,
+            'timestamp': datetime.now().isoformat(),
+            'acknowledged': False,
+            **kwargs
+        }
+        
+        self.alert_history.append(alert)
+        
+        return alert
+    
+    def _dispatch_alert(self, alert: Dict):
+        """Dispatch alert to notification channels"""
+        for channel in self.notification_channels:
+            if channel == 'log':
+                if alert['severity'] == 'critical':
+                    logger.critical(f"[{alert['type']}] {alert['message']}")
+                elif alert['severity'] == 'high':
+                    logger.warning(f"[{alert['type']}] {alert['message']}")
+                else:
+                    logger.info(f"[{alert['type']}] {alert['message']}")
+    
+    def acknowledge_alert(self, alert_id: str):
+        """
+        Acknowledge an alert
+        
+        Args:
+            alert_id: Alert ID to acknowledge
+        """
+        self.acknowledged_alerts.add(alert_id)
+        
+        for alert in self.alert_history:
+            if alert['alert_id'] == alert_id:
+                alert['acknowledged'] = True
+                alert['acknowledged_at'] = datetime.now().isoformat()
+                break
+        
+        logger.info(f"Alert acknowledged: {alert_id}")
+    
+    def get_active_alerts(self, severity: str = None) -> List[Dict]:
+        """
+        Get active (unacknowledged) alerts
+        
+        Args:
+            severity: Filter by severity level
+            
+        Returns:
+            List of active alerts
+        """
+        active = [a for a in self.alert_history if not a['acknowledged']]
+        
+        if severity:
+            active = [a for a in active if a['severity'] == severity]
+        
+        return active
+    
+    def get_alert_statistics(self) -> Dict:
+        """Get alert statistics"""
+        total = len(self.alert_history)
+        acknowledged = len(self.acknowledged_alerts)
+        
+        by_severity = {}
+        by_type = {}
+        
+        for alert in self.alert_history:
+            sev = alert['severity']
+            by_severity[sev] = by_severity.get(sev, 0) + 1
+            
+            atype = alert['type']
+            by_type[atype] = by_type.get(atype, 0) + 1
+        
+        return {
+            'total_alerts': total,
+            'acknowledged': acknowledged,
+            'active': total - acknowledged,
+            'by_severity': by_severity,
+            'by_type': by_type
+        }
+    
+    def get_alert_summary(self) -> str:
+        """Generate alert summary"""
+        stats = self.get_alert_statistics()
+        
+        lines = [
+            "=" * 60,
+            "ALERT SUMMARY",
+            "=" * 60,
+            f"Total Alerts: {stats['total_alerts']}",
+            f"Acknowledged: {stats['acknowledged']}",
+            f"Active: {stats['active']}",
+            "",
+            "By Severity:"
+        ]
+        
+        for sev, count in stats['by_severity'].items():
+            lines.append(f"  {sev}: {count}")
+        
+        lines.extend(["", "By Type:"])
+        for atype, count in stats['by_type'].items():
+            lines.append(f"  {atype}: {count}")
+        
+        active = self.get_active_alerts()
+        if active:
+            lines.extend(["", "Active Alerts:"])
+            for alert in active[:5]:
+                lines.append(f"  [{alert['severity'].upper()}] {alert['message']}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test model monitor
     print("="*60)
