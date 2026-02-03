@@ -847,6 +847,180 @@ class CrossValidationPipeline:
         return '\n'.join(lines)
 
 
+class PerformanceProfiler:
+    """
+    Performance profiling for ML inference
+    Tracks memory, CPU, and timing metrics
+    """
+    
+    def __init__(self):
+        """Initialize performance profiler"""
+        self.profiles = []
+        self.current_profile = None
+        self.recommendations = []
+        logger.info("Initialized PerformanceProfiler")
+    
+    def start_profile(self, name: str):
+        """Start a new profile session"""
+        import time
+        
+        self.current_profile = {
+            'name': name,
+            'start_time': time.time(),
+            'start_memory': self._get_memory_usage(),
+            'checkpoints': [],
+            'metrics': {}
+        }
+    
+    def checkpoint(self, label: str):
+        """Add a checkpoint to current profile"""
+        import time
+        
+        if not self.current_profile:
+            return
+        
+        checkpoint = {
+            'label': label,
+            'time': time.time(),
+            'elapsed': time.time() - self.current_profile['start_time'],
+            'memory': self._get_memory_usage()
+        }
+        
+        self.current_profile['checkpoints'].append(checkpoint)
+    
+    def end_profile(self) -> Dict:
+        """End current profile and analyze results"""
+        import time
+        
+        if not self.current_profile:
+            return {}
+        
+        end_time = time.time()
+        end_memory = self._get_memory_usage()
+        
+        profile = self.current_profile.copy()
+        profile['end_time'] = end_time
+        profile['end_memory'] = end_memory
+        profile['total_time'] = end_time - profile['start_time']
+        profile['memory_delta'] = end_memory - profile['start_memory']
+        profile['bottlenecks'] = self._identify_bottlenecks(profile)
+        
+        self.profiles.append(profile)
+        self.current_profile = None
+        
+        return profile
+    
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage in MB"""
+        try:
+            import psutil
+            process = psutil.Process()
+            return process.memory_info().rss / (1024 * 1024)
+        except ImportError:
+            return 0.0
+    
+    def _identify_bottlenecks(self, profile: Dict) -> List[Dict]:
+        """Identify performance bottlenecks"""
+        bottlenecks = []
+        checkpoints = profile.get('checkpoints', [])
+        
+        if len(checkpoints) < 2:
+            return bottlenecks
+        
+        step_times = []
+        for i in range(1, len(checkpoints)):
+            step_time = checkpoints[i]['elapsed'] - checkpoints[i-1]['elapsed']
+            step_times.append({
+                'step': f"{checkpoints[i-1]['label']} → {checkpoints[i]['label']}",
+                'time': step_time
+            })
+        
+        total = sum(s['time'] for s in step_times)
+        
+        for step in step_times:
+            pct = (step['time'] / total * 100) if total > 0 else 0
+            if pct > 50:
+                bottlenecks.append({
+                    'type': 'time',
+                    'description': f"{step['step']} takes {pct:.1f}% of total time",
+                    'severity': 'high' if pct > 70 else 'medium'
+                })
+        
+        if profile.get('memory_delta', 0) > 100:
+            bottlenecks.append({
+                'type': 'memory',
+                'description': f"Memory growth: {profile['memory_delta']:.1f} MB",
+                'severity': 'high' if profile['memory_delta'] > 500 else 'medium'
+            })
+        
+        return bottlenecks
+    
+    def profile_inference(self, model, data: np.ndarray) -> Dict:
+        """Profile model inference"""
+        import time
+        
+        n_samples = len(data)
+        
+        self.start_profile('inference')
+        self.checkpoint('start')
+        
+        predictions = model.predict(data)
+        self.checkpoint('predict')
+        
+        profile = self.end_profile()
+        
+        profile['metrics'] = {
+            'samples': n_samples,
+            'throughput': n_samples / profile['total_time'] if profile['total_time'] > 0 else 0,
+            'latency_ms': profile['total_time'] * 1000 / n_samples if n_samples > 0 else 0
+        }
+        
+        return profile
+    
+    def generate_recommendations(self) -> List[str]:
+        """Generate performance recommendations"""
+        recommendations = []
+        
+        if not self.profiles:
+            return ["Run some profiles to generate recommendations"]
+        
+        avg_time = np.mean([p['total_time'] for p in self.profiles])
+        avg_memory = np.mean([p.get('memory_delta', 0) for p in self.profiles])
+        
+        if avg_time > 1.0:
+            recommendations.append("Consider batch processing or model optimization")
+        
+        if avg_memory > 200:
+            recommendations.append("High memory usage - consider smaller batch sizes")
+        
+        self.recommendations = recommendations
+        return recommendations
+    
+    def get_profile_summary(self) -> str:
+        """Generate profile summary"""
+        lines = [
+            "=" * 60,
+            "PERFORMANCE PROFILE SUMMARY",
+            "=" * 60,
+            f"Total Profiles: {len(self.profiles)}",
+            ""
+        ]
+        
+        if self.profiles:
+            avg_time = np.mean([p['total_time'] for p in self.profiles])
+            lines.append(f"Average Time: {avg_time*1000:.1f} ms")
+        
+        recommendations = self.generate_recommendations()
+        if recommendations:
+            lines.extend(["", "Recommendations:"])
+            for rec in recommendations:
+                lines.append(f"  • {rec}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test evaluator
     print("="*60)
