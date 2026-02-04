@@ -816,6 +816,197 @@ class HealthCheckMonitor:
         return '\n'.join(lines)
 
 
+class DeploymentManager:
+    """
+    Deployment management for ML models
+    Supports blue-green and canary deployments
+    """
+    
+    def __init__(self):
+        """Initialize deployment manager"""
+        self.slots = {
+            'blue': {'model': None, 'version': None, 'status': 'inactive'},
+            'green': {'model': None, 'version': None, 'status': 'inactive'}
+        }
+        self.active_slot = None
+        self.canary_config = None
+        self.deployment_history = []
+        logger.info("Initialized DeploymentManager")
+    
+    def deploy_to_slot(self, 
+                       slot: str, 
+                       model, 
+                       version: str):
+        """
+        Deploy model to a slot
+        
+        Args:
+            slot: 'blue' or 'green'
+            model: Model to deploy
+            version: Version string
+        """
+        from datetime import datetime
+        
+        if slot not in self.slots:
+            raise ValueError(f"Invalid slot: {slot}")
+        
+        self.slots[slot] = {
+            'model': model,
+            'version': version,
+            'status': 'ready',
+            'deployed_at': datetime.now().isoformat()
+        }
+        
+        self.deployment_history.append({
+            'action': 'deploy',
+            'slot': slot,
+            'version': version,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        logger.info(f"Deployed version {version} to {slot} slot")
+    
+    def activate_slot(self, slot: str):
+        """
+        Activate a slot for production traffic
+        
+        Args:
+            slot: Slot to activate
+        """
+        from datetime import datetime
+        
+        if slot not in self.slots:
+            raise ValueError(f"Invalid slot: {slot}")
+        
+        if self.slots[slot]['model'] is None:
+            raise ValueError(f"No model deployed to {slot} slot")
+        
+        # Deactivate current slot
+        if self.active_slot:
+            self.slots[self.active_slot]['status'] = 'standby'
+        
+        self.slots[slot]['status'] = 'active'
+        self.active_slot = slot
+        
+        self.deployment_history.append({
+            'action': 'activate',
+            'slot': slot,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+        logger.info(f"Activated {slot} slot")
+    
+    def rollback(self):
+        """Rollback to the other slot"""
+        if not self.active_slot:
+            logger.warning("No active deployment to rollback from")
+            return
+        
+        other_slot = 'blue' if self.active_slot == 'green' else 'green'
+        
+        if self.slots[other_slot]['model'] is not None:
+            self.activate_slot(other_slot)
+            logger.info(f"Rolled back to {other_slot} slot")
+        else:
+            logger.warning(f"No model in {other_slot} slot to rollback to")
+    
+    def configure_canary(self,
+                        canary_slot: str,
+                        traffic_percent: float = 10.0):
+        """
+        Configure canary deployment
+        
+        Args:
+            canary_slot: Slot for canary traffic
+            traffic_percent: Percentage of traffic to canary
+        """
+        self.canary_config = {
+            'slot': canary_slot,
+            'traffic_percent': traffic_percent,
+            'enabled': True
+        }
+        logger.info(f"Configured canary: {traffic_percent}% to {canary_slot}")
+    
+    def route_request(self) -> str:
+        """
+        Route request to appropriate slot
+        
+        Returns:
+            Slot name to handle request
+        """
+        import random
+        
+        if self.canary_config and self.canary_config.get('enabled'):
+            if random.random() * 100 < self.canary_config['traffic_percent']:
+                return self.canary_config['slot']
+        
+        return self.active_slot
+    
+    def predict(self, data) -> dict:
+        """
+        Make prediction using appropriate model
+        
+        Args:
+            data: Input data
+            
+        Returns:
+            Prediction with metadata
+        """
+        slot = self.route_request()
+        
+        if not slot or self.slots[slot]['model'] is None:
+            raise RuntimeError("No active model for predictions")
+        
+        model = self.slots[slot]['model']
+        prediction = model.predict(data)
+        
+        return {
+            'prediction': prediction,
+            'slot': slot,
+            'version': self.slots[slot]['version']
+        }
+    
+    def get_status(self) -> dict:
+        """Get deployment status"""
+        return {
+            'active_slot': self.active_slot,
+            'slots': {
+                name: {
+                    'version': info.get('version'),
+                    'status': info.get('status')
+                }
+                for name, info in self.slots.items()
+            },
+            'canary': self.canary_config
+        }
+    
+    def get_deployment_summary(self) -> str:
+        """Generate deployment summary"""
+        lines = [
+            "=" * 60,
+            "DEPLOYMENT STATUS",
+            "=" * 60,
+            f"Active Slot: {self.active_slot or 'none'}",
+            ""
+        ]
+        
+        for name, info in self.slots.items():
+            status = info.get('status', 'unknown')
+            version = info.get('version', 'none')
+            active = " [ACTIVE]" if name == self.active_slot else ""
+            lines.append(f"  {name.upper()}: {version} ({status}){active}")
+        
+        if self.canary_config and self.canary_config.get('enabled'):
+            lines.extend([
+                "",
+                f"Canary: {self.canary_config['traffic_percent']}% to {self.canary_config['slot']}"
+            ])
+        
+        lines.extend(["", f"History: {len(self.deployment_history)} events", "=" * 60])
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     import uvicorn
     
