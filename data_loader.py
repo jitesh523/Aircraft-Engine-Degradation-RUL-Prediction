@@ -187,6 +187,211 @@ def load_dataset(dataset_name: str = 'FD001') -> Tuple[pd.DataFrame, pd.DataFram
 DataLoader = CMAPSSDataLoader
 
 
+class DatasetVersioner:
+    """
+    Dataset versioning with hash-based tracking
+    Supports version history and rollback
+    """
+    
+    def __init__(self, versions_dir: str = None):
+        """
+        Initialize dataset versioner
+        
+        Args:
+            versions_dir: Directory to store version metadata
+        """
+        import os
+        import json
+        
+        self.versions_dir = versions_dir or os.path.join(config.DATA_DIR, 'versions')
+        os.makedirs(self.versions_dir, exist_ok=True)
+        
+        self.versions = {}
+        self.current_version = None
+        self._load_versions()
+        
+        logger.info(f"Initialized DatasetVersioner (dir: {self.versions_dir})")
+    
+    def _load_versions(self):
+        """Load existing version metadata"""
+        import os
+        import json
+        
+        registry_path = os.path.join(self.versions_dir, 'registry.json')
+        if os.path.exists(registry_path):
+            with open(registry_path, 'r') as f:
+                data = json.load(f)
+                self.versions = data.get('versions', {})
+                self.current_version = data.get('current_version')
+    
+    def _save_versions(self):
+        """Save version metadata"""
+        import os
+        import json
+        
+        registry_path = os.path.join(self.versions_dir, 'registry.json')
+        with open(registry_path, 'w') as f:
+            json.dump({
+                'versions': self.versions,
+                'current_version': self.current_version
+            }, f, indent=2)
+    
+    def _compute_hash(self, df: pd.DataFrame) -> str:
+        """Compute hash of DataFrame"""
+        import hashlib
+        
+        data_bytes = pd.util.hash_pandas_object(df).values.tobytes()
+        return hashlib.sha256(data_bytes).hexdigest()[:16]
+    
+    def create_version(self,
+                       df: pd.DataFrame,
+                       name: str,
+                       description: str = '') -> str:
+        """
+        Create a new dataset version
+        
+        Args:
+            df: DataFrame to version
+            name: Version name
+            description: Version description
+            
+        Returns:
+            Version ID
+        """
+        import os
+        from datetime import datetime
+        
+        data_hash = self._compute_hash(df)
+        version_id = f"v_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        
+        version_info = {
+            'version_id': version_id,
+            'name': name,
+            'description': description,
+            'hash': data_hash,
+            'created_at': datetime.now().isoformat(),
+            'rows': len(df),
+            'columns': len(df.columns),
+            'column_names': list(df.columns)
+        }
+        
+        # Save version data
+        version_path = os.path.join(self.versions_dir, f"{version_id}.parquet")
+        df.to_parquet(version_path, index=False)
+        
+        version_info['path'] = version_path
+        
+        self.versions[version_id] = version_info
+        self.current_version = version_id
+        self._save_versions()
+        
+        logger.info(f"Created version {version_id}: {name} (hash: {data_hash})")
+        
+        return version_id
+    
+    def get_version(self, version_id: str) -> pd.DataFrame:
+        """
+        Load a specific version
+        
+        Args:
+            version_id: Version ID to load
+            
+        Returns:
+            DataFrame of that version
+        """
+        if version_id not in self.versions:
+            raise ValueError(f"Version not found: {version_id}")
+        
+        version_info = self.versions[version_id]
+        df = pd.read_parquet(version_info['path'])
+        
+        logger.info(f"Loaded version {version_id}")
+        
+        return df
+    
+    def rollback(self, version_id: str) -> pd.DataFrame:
+        """
+        Rollback to a specific version
+        
+        Args:
+            version_id: Version to rollback to
+            
+        Returns:
+            DataFrame of that version
+        """
+        df = self.get_version(version_id)
+        self.current_version = version_id
+        self._save_versions()
+        
+        logger.info(f"Rolled back to version {version_id}")
+        
+        return df
+    
+    def compare_versions(self,
+                        version_a: str,
+                        version_b: str) -> Dict:
+        """
+        Compare two versions
+        
+        Args:
+            version_a: First version ID
+            version_b: Second version ID
+            
+        Returns:
+            Comparison results
+        """
+        a_info = self.versions.get(version_a, {})
+        b_info = self.versions.get(version_b, {})
+        
+        return {
+            'version_a': version_a,
+            'version_b': version_b,
+            'same_hash': a_info.get('hash') == b_info.get('hash'),
+            'row_diff': b_info.get('rows', 0) - a_info.get('rows', 0),
+            'column_diff': b_info.get('columns', 0) - a_info.get('columns', 0),
+            'a_columns': set(a_info.get('column_names', [])),
+            'b_columns': set(b_info.get('column_names', []))
+        }
+    
+    def list_versions(self) -> pd.DataFrame:
+        """List all versions"""
+        if not self.versions:
+            return pd.DataFrame()
+        
+        records = []
+        for vid, info in self.versions.items():
+            records.append({
+                'version_id': vid,
+                'name': info.get('name'),
+                'rows': info.get('rows'),
+                'columns': info.get('columns'),
+                'created_at': info.get('created_at'),
+                'current': vid == self.current_version
+            })
+        
+        return pd.DataFrame(records)
+    
+    def get_version_summary(self) -> str:
+        """Generate version summary"""
+        lines = [
+            "=" * 60,
+            "DATASET VERSION SUMMARY",
+            "=" * 60,
+            f"Total Versions: {len(self.versions)}",
+            f"Current Version: {self.current_version}",
+            ""
+        ]
+        
+        for vid, info in list(self.versions.items())[-5:]:
+            current = " [CURRENT]" if vid == self.current_version else ""
+            lines.append(f"  {vid}: {info.get('name')}{current}")
+            lines.append(f"    Rows: {info.get('rows')}, Hash: {info.get('hash')}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test the data loader
     print("="*60)
