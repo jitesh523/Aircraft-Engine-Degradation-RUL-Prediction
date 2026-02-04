@@ -597,6 +597,201 @@ class SensorAnomalyDetector:
         }
 
 
+class SchemaValidator:
+    """
+    Schema validation for input/output data
+    Ensures data conforms to expected structure
+    """
+    
+    def __init__(self):
+        """Initialize schema validator"""
+        self.schemas = {}
+        self.validation_history = []
+        logger.info("Initialized SchemaValidator")
+    
+    def define_schema(self, name: str, schema: Dict):
+        """
+        Define a data schema
+        
+        Args:
+            name: Schema name
+            schema: Schema definition with columns and types
+        """
+        self.schemas[name] = {
+            'name': name,
+            'definition': schema,
+            'created_at': pd.Timestamp.now().isoformat()
+        }
+        logger.info(f"Defined schema: {name}")
+    
+    def define_input_schema(self, columns: Dict[str, type], required: List[str] = None):
+        """
+        Define input schema
+        
+        Args:
+            columns: Dict of column_name: expected_type
+            required: List of required columns
+        """
+        schema = {
+            'columns': columns,
+            'required': required or list(columns.keys())
+        }
+        self.define_schema('input', schema)
+    
+    def define_output_schema(self, 
+                            column_name: str = 'RUL',
+                            dtype: type = float,
+                            min_value: float = 0,
+                            max_value: float = None):
+        """
+        Define output schema
+        
+        Args:
+            column_name: Output column name
+            dtype: Expected data type
+            min_value: Minimum valid value
+            max_value: Maximum valid value
+        """
+        schema = {
+            'column_name': column_name,
+            'dtype': str(dtype),
+            'min_value': min_value,
+            'max_value': max_value
+        }
+        self.define_schema('output', schema)
+    
+    def validate_input(self, df: pd.DataFrame) -> Dict:
+        """
+        Validate input DataFrame against schema
+        
+        Args:
+            df: Input DataFrame
+            
+        Returns:
+            Validation result
+        """
+        if 'input' not in self.schemas:
+            return {'valid': True, 'warning': 'No input schema defined'}
+        
+        schema = self.schemas['input']['definition']
+        errors = []
+        warnings = []
+        
+        # Check required columns
+        for col in schema.get('required', []):
+            if col not in df.columns:
+                errors.append(f"Missing required column: {col}")
+        
+        # Check column types
+        for col, expected_type in schema.get('columns', {}).items():
+            if col in df.columns:
+                actual_type = df[col].dtype
+                if expected_type == float and not np.issubdtype(actual_type, np.floating):
+                    if not np.issubdtype(actual_type, np.integer):
+                        warnings.append(f"Column {col}: expected float, got {actual_type}")
+                elif expected_type == int and not np.issubdtype(actual_type, np.integer):
+                    warnings.append(f"Column {col}: expected int, got {actual_type}")
+        
+        result = {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'warnings': warnings,
+            'columns_found': len(df.columns),
+            'rows': len(df)
+        }
+        
+        self.validation_history.append({'type': 'input', 'result': result})
+        
+        return result
+    
+    def validate_output(self, predictions) -> Dict:
+        """
+        Validate output predictions against schema
+        
+        Args:
+            predictions: Predictions array or DataFrame
+            
+        Returns:
+            Validation result
+        """
+        if 'output' not in self.schemas:
+            return {'valid': True, 'warning': 'No output schema defined'}
+        
+        schema = self.schemas['output']['definition']
+        errors = []
+        
+        # Convert to array
+        if isinstance(predictions, pd.DataFrame):
+            col = schema.get('column_name', 'RUL')
+            if col in predictions.columns:
+                values = predictions[col].values
+            else:
+                values = predictions.iloc[:, 0].values
+        else:
+            values = np.array(predictions)
+        
+        # Check value range
+        min_val = schema.get('min_value')
+        max_val = schema.get('max_value')
+        
+        if min_val is not None and np.any(values < min_val):
+            errors.append(f"Values below minimum ({min_val})")
+        
+        if max_val is not None and np.any(values > max_val):
+            errors.append(f"Values above maximum ({max_val})")
+        
+        # Check for invalid values
+        if np.any(np.isnan(values)):
+            errors.append("Contains NaN values")
+        
+        if np.any(np.isinf(values)):
+            errors.append("Contains infinite values")
+        
+        result = {
+            'valid': len(errors) == 0,
+            'errors': errors,
+            'count': len(values),
+            'range': [float(np.min(values)), float(np.max(values))]
+        }
+        
+        self.validation_history.append({'type': 'output', 'result': result})
+        
+        return result
+    
+    def get_schema(self, name: str) -> Dict:
+        """Get schema by name"""
+        return self.schemas.get(name, {})
+    
+    def list_schemas(self) -> List[str]:
+        """List all defined schemas"""
+        return list(self.schemas.keys())
+    
+    def get_validation_summary(self) -> str:
+        """Generate validation summary"""
+        lines = [
+            "=" * 60,
+            "SCHEMA VALIDATION SUMMARY",
+            "=" * 60,
+            f"Schemas Defined: {len(self.schemas)}",
+            f"Validations Run: {len(self.validation_history)}",
+            ""
+        ]
+        
+        for name in self.schemas:
+            lines.append(f"  - {name}")
+        
+        # Recent validations
+        if self.validation_history:
+            lines.extend(["", "Recent Validations:"])
+            for record in self.validation_history[-3:]:
+                status = "✓" if record['result']['valid'] else "✗"
+                lines.append(f"  {status} {record['type']}")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test data validator
     print("="*60)
