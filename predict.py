@@ -631,6 +631,174 @@ class BatchPredictionManager:
         return '\n'.join(lines)
 
 
+class PredictionCache:
+    """
+    LRU cache for predictions with TTL expiration
+    Improves performance by caching repeated predictions
+    """
+    
+    def __init__(self, 
+                 max_size: int = 1000,
+                 ttl_seconds: int = 3600):
+        """
+        Initialize prediction cache
+        
+        Args:
+            max_size: Maximum cache entries
+            ttl_seconds: Time-to-live in seconds
+        """
+        from collections import OrderedDict
+        from datetime import datetime
+        
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+        self.cache = OrderedDict()
+        self.stats = {
+            'hits': 0,
+            'misses': 0,
+            'evictions': 0
+        }
+        logger.info(f"Initialized PredictionCache (max={max_size}, ttl={ttl_seconds}s)")
+    
+    def _compute_key(self, data) -> str:
+        """Compute cache key from input data"""
+        import hashlib
+        
+        if hasattr(data, 'tobytes'):
+            data_bytes = data.tobytes()
+        else:
+            data_bytes = str(data).encode()
+        
+        return hashlib.md5(data_bytes).hexdigest()
+    
+    def _is_expired(self, entry: dict) -> bool:
+        """Check if cache entry is expired"""
+        from datetime import datetime
+        
+        age = (datetime.now() - entry['timestamp']).total_seconds()
+        return age > self.ttl_seconds
+    
+    def get(self, data) -> tuple:
+        """
+        Get cached prediction
+        
+        Args:
+            data: Input data
+            
+        Returns:
+            Tuple of (prediction, hit) where hit is True if cache hit
+        """
+        key = self._compute_key(data)
+        
+        if key in self.cache:
+            entry = self.cache[key]
+            
+            if self._is_expired(entry):
+                del self.cache[key]
+                self.stats['misses'] += 1
+                return None, False
+            
+            # Move to end (most recently used)
+            self.cache.move_to_end(key)
+            self.stats['hits'] += 1
+            
+            return entry['prediction'], True
+        
+        self.stats['misses'] += 1
+        return None, False
+    
+    def put(self, data, prediction):
+        """
+        Store prediction in cache
+        
+        Args:
+            data: Input data
+            prediction: Prediction to cache
+        """
+        from datetime import datetime
+        
+        key = self._compute_key(data)
+        
+        # Evict oldest if at capacity
+        while len(self.cache) >= self.max_size:
+            self.cache.popitem(last=False)
+            self.stats['evictions'] += 1
+        
+        self.cache[key] = {
+            'prediction': prediction,
+            'timestamp': datetime.now()
+        }
+    
+    def clear(self):
+        """Clear all cached entries"""
+        self.cache.clear()
+        logger.info("Cache cleared")
+    
+    def invalidate_expired(self):
+        """Remove all expired entries"""
+        expired = [k for k, v in self.cache.items() if self._is_expired(v)]
+        
+        for key in expired:
+            del self.cache[key]
+        
+        logger.info(f"Invalidated {len(expired)} expired entries")
+        
+        return len(expired)
+    
+    def get_stats(self) -> dict:
+        """Get cache statistics"""
+        total = self.stats['hits'] + self.stats['misses']
+        hit_rate = self.stats['hits'] / total if total > 0 else 0
+        
+        return {
+            'hits': self.stats['hits'],
+            'misses': self.stats['misses'],
+            'hit_rate': hit_rate,
+            'evictions': self.stats['evictions'],
+            'size': len(self.cache),
+            'max_size': self.max_size
+        }
+    
+    def cached_predict(self, predict_fn, data):
+        """
+        Predict with caching
+        
+        Args:
+            predict_fn: Prediction function
+            data: Input data
+            
+        Returns:
+            Prediction (from cache or fresh)
+        """
+        prediction, hit = self.get(data)
+        
+        if hit:
+            return prediction
+        
+        prediction = predict_fn(data)
+        self.put(data, prediction)
+        
+        return prediction
+    
+    def get_cache_summary(self) -> str:
+        """Generate cache summary"""
+        stats = self.get_stats()
+        
+        lines = [
+            "=" * 60,
+            "PREDICTION CACHE SUMMARY",
+            "=" * 60,
+            f"Size: {stats['size']}/{stats['max_size']}",
+            f"Hit Rate: {stats['hit_rate']*100:.1f}%",
+            f"Hits: {stats['hits']}",
+            f"Misses: {stats['misses']}",
+            f"Evictions: {stats['evictions']}",
+            "=" * 60
+        ]
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Predict RUL for test engines')
     parser.add_argument('--dataset', type=str, default='FD001',
