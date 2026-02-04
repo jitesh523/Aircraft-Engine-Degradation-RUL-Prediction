@@ -1021,6 +1021,227 @@ class PerformanceProfiler:
         return '\n'.join(lines)
 
 
+class ModelValidator:
+    """
+    Pre-deployment model validation
+    Ensures model meets quality standards before production
+    """
+    
+    def __init__(self):
+        """Initialize model validator"""
+        self.validation_results = []
+        self.thresholds = {
+            'max_rmse': 30.0,
+            'min_r2': 0.5,
+            'max_mae': 25.0,
+            'min_samples': 100
+        }
+        logger.info("Initialized ModelValidator")
+    
+    def configure_thresholds(self, thresholds: Dict[str, float]):
+        """Configure validation thresholds"""
+        self.thresholds.update(thresholds)
+        logger.info(f"Updated thresholds: {thresholds}")
+    
+    def validate_predictions(self,
+                            y_true: np.ndarray,
+                            y_pred: np.ndarray) -> Dict:
+        """
+        Validate prediction quality
+        
+        Args:
+            y_true: True values
+            y_pred: Predicted values
+            
+        Returns:
+            Validation results
+        """
+        from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+        
+        rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+        mae = mean_absolute_error(y_true, y_pred)
+        r2 = r2_score(y_true, y_pred)
+        
+        checks = {
+            'rmse_check': rmse <= self.thresholds['max_rmse'],
+            'mae_check': mae <= self.thresholds['max_mae'],
+            'r2_check': r2 >= self.thresholds['min_r2'],
+            'sample_check': len(y_true) >= self.thresholds['min_samples']
+        }
+        
+        result = {
+            'valid': all(checks.values()),
+            'metrics': {'rmse': rmse, 'mae': mae, 'r2': r2},
+            'checks': checks,
+            'sample_size': len(y_true)
+        }
+        
+        self.validation_results.append(result)
+        
+        return result
+    
+    def validate_output_format(self,
+                              predictions: np.ndarray) -> Dict:
+        """
+        Validate output format
+        
+        Args:
+            predictions: Prediction array
+            
+        Returns:
+            Validation results
+        """
+        issues = []
+        
+        if predictions is None or len(predictions) == 0:
+            issues.append("Empty predictions")
+        
+        if np.any(np.isnan(predictions)):
+            issues.append("Contains NaN values")
+        
+        if np.any(np.isinf(predictions)):
+            issues.append("Contains infinite values")
+        
+        if np.any(predictions < 0):
+            issues.append("Contains negative RUL values")
+        
+        result = {
+            'valid': len(issues) == 0,
+            'issues': issues,
+            'shape': predictions.shape if predictions is not None else None,
+            'dtype': str(predictions.dtype) if predictions is not None else None
+        }
+        
+        return result
+    
+    def validate_model_sanity(self,
+                             model,
+                             sample_data: np.ndarray) -> Dict:
+        """
+        Run sanity checks on model
+        
+        Args:
+            model: Model with predict method
+            sample_data: Sample input data
+            
+        Returns:
+            Sanity check results
+        """
+        checks = []
+        
+        # Check model has predict method
+        if not hasattr(model, 'predict'):
+            checks.append({'check': 'has_predict', 'passed': False})
+            return {'valid': False, 'checks': checks}
+        
+        checks.append({'check': 'has_predict', 'passed': True})
+        
+        # Check prediction works
+        try:
+            predictions = model.predict(sample_data)
+            checks.append({'check': 'can_predict', 'passed': True})
+        except Exception as e:
+            checks.append({'check': 'can_predict', 'passed': False, 'error': str(e)})
+            return {'valid': False, 'checks': checks}
+        
+        # Check output shape
+        expected_len = len(sample_data)
+        if len(predictions) == expected_len:
+            checks.append({'check': 'correct_shape', 'passed': True})
+        else:
+            checks.append({'check': 'correct_shape', 'passed': False})
+        
+        # Check deterministic
+        predictions2 = model.predict(sample_data)
+        if np.allclose(predictions, predictions2):
+            checks.append({'check': 'deterministic', 'passed': True})
+        else:
+            checks.append({'check': 'deterministic', 'passed': False})
+        
+        result = {
+            'valid': all(c['passed'] for c in checks),
+            'checks': checks
+        }
+        
+        return result
+    
+    def run_full_validation(self,
+                           model,
+                           X_test: np.ndarray,
+                           y_test: np.ndarray) -> Dict:
+        """
+        Run complete validation suite
+        
+        Args:
+            model: Model to validate
+            X_test: Test features
+            y_test: Test labels
+            
+        Returns:
+            Complete validation results
+        """
+        logger.info("Running full model validation...")
+        
+        results = {}
+        
+        # Sanity checks
+        results['sanity'] = self.validate_model_sanity(model, X_test[:10])
+        
+        if not results['sanity']['valid']:
+            results['overall'] = 'FAILED'
+            return results
+        
+        # Get predictions
+        predictions = model.predict(X_test)
+        
+        # Output format
+        results['format'] = self.validate_output_format(predictions)
+        
+        # Prediction quality
+        results['quality'] = self.validate_predictions(y_test, predictions)
+        
+        # Overall status
+        all_valid = (results['sanity']['valid'] and 
+                    results['format']['valid'] and 
+                    results['quality']['valid'])
+        
+        results['overall'] = 'PASSED' if all_valid else 'FAILED'
+        results['ready_for_deployment'] = all_valid
+        
+        logger.info(f"Validation complete: {results['overall']}")
+        
+        return results
+    
+    def get_validation_summary(self) -> str:
+        """Generate validation summary"""
+        lines = [
+            "=" * 60,
+            "MODEL VALIDATION SUMMARY",
+            "=" * 60,
+            f"Validations Run: {len(self.validation_results)}",
+            ""
+        ]
+        
+        if self.validation_results:
+            last = self.validation_results[-1]
+            lines.extend([
+                "Last Validation:",
+                f"  Valid: {last['valid']}",
+                f"  RMSE: {last['metrics']['rmse']:.2f}",
+                f"  R²: {last['metrics']['r2']:.4f}"
+            ])
+        
+        lines.extend([
+            "",
+            "Thresholds:",
+            f"  Max RMSE: {self.thresholds['max_rmse']}",
+            f"  Min R²: {self.thresholds['min_r2']}",
+            "=" * 60
+        ])
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test evaluator
     print("="*60)
