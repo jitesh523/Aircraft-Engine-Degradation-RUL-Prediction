@@ -701,6 +701,134 @@ class FeatureImportanceAnalyzer:
         return '\n'.join(lines)
 
 
+        return '\n'.join(lines)
+
+
+class FeatureSelector:
+    """
+    Automated feature selection
+    Uses RFE and Variance Thresholding to identify best features
+    """
+    
+    def __init__(self, n_features_to_select: int = None):
+        """
+        Initialize feature selector
+        
+        Args:
+            n_features_to_select: Number of features to select (None = automatic)
+        """
+        self.n_features_to_select = n_features_to_select
+        self.selected_features = None
+        self.feature_importance = {}
+        logger.info("Initialized FeatureSelector")
+    
+    def select_by_variance(self,
+                          df: pd.DataFrame,
+                          feature_cols: List[str],
+                          threshold: float = 0.0) -> List[str]:
+        """
+        Select features by variance threshold
+        
+        Args:
+            df: Feature DataFrame
+            feature_cols: Features to check
+            threshold: Minimum variance threshold
+            
+        Returns:
+            List of selected feature names
+        """
+        from sklearn.feature_selection import VarianceThreshold
+        
+        selector = VarianceThreshold(threshold=threshold)
+        selector.fit(df[feature_cols])
+        
+        selected_mask = selector.get_support()
+        selected_features = [f for f, s in zip(feature_cols, selected_mask) if s]
+        
+        logger.info(f"Variance Selection: {len(selected_features)}/{len(feature_cols)} features kept (threshold={threshold})")
+        
+        return selected_features
+    
+    def select_by_rfe(self,
+                     df: pd.DataFrame,
+                     target: pd.Series,
+                     feature_cols: List[str],
+                     n_features: int = 10) -> List[str]:
+        """
+        Select features using Recursive Feature Elimination
+        
+        Args:
+            df: Feature DataFrame
+            target: Target values
+            feature_cols: Features to select from
+            n_features: Number to select
+            
+        Returns:
+            List of selected feature names
+        """
+        from sklearn.feature_selection import RFE
+        from sklearn.ensemble import RandomForestRegressor
+        
+        estimator = RandomForestRegressor(n_estimators=50, n_jobs=-1, random_state=42)
+        selector = RFE(estimator, n_features_to_select=n_features, step=1)
+        
+        logger.info(f"Running RFE to select {n_features} features from {len(feature_cols)} candidates...")
+        selector.fit(df[feature_cols], target)
+        
+        selected_mask = selector.support_
+        selected_features = [f for f, s in zip(feature_cols, selected_mask) if s]
+        
+        # Store rankings
+        self.feature_importance = dict(zip(feature_cols, selector.ranking_))
+        
+        logger.info(f"RFE Selection complete: {len(selected_features)} features selected")
+        
+        return selected_features
+    
+    def run_automatic_selection(self,
+                               df: pd.DataFrame,
+                               target: pd.Series,
+                               feature_cols: List[str]) -> Dict:
+        """
+        Run complete automated selection workflow
+        
+        Args:
+            df: Feature DataFrame
+            target: Target values
+            feature_cols: Initial feature list
+            
+        Returns:
+            Selection results
+        """
+        # 1. Variance Threshold
+        low_variance_keepers = self.select_by_variance(df, feature_cols, threshold=0.01)
+        
+        # 2. RFE on remaining features
+        n_select = self.n_features_to_select or max(5, len(low_variance_keepers) // 2)
+        final_features = self.select_by_rfe(df, target, low_variance_keepers, n_features=n_select)
+        
+        self.selected_features = final_features
+        
+        result = {
+            'initial_count': len(feature_cols),
+            'after_variance': len(low_variance_keepers),
+            'final_count': len(final_features),
+            'selected_features': final_features,
+            'dropped_variance': list(set(feature_cols) - set(low_variance_keepers)),
+            'dropped_rfe': list(set(low_variance_keepers) - set(final_features))
+        }
+        
+        return result
+    
+    def get_feature_rankings(self) -> pd.DataFrame:
+        """Get feature importance rankings"""
+        if not self.feature_importance:
+            return pd.DataFrame()
+        
+        rankings = pd.DataFrame(list(self.feature_importance.items()), columns=['feature', 'rank'])
+        return rankings.sort_values('rank')
+
+
 if __name__ == "__main__":
     # Test the feature engineer
     from data_loader import load_dataset
