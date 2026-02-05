@@ -743,6 +743,124 @@ class PipelineOrchestrator:
         return '\n'.join(lines)
 
 
+        return execution_report
+
+
+class DistributedTrainer:
+    """
+    Distributed training manager
+    Handles multi-GPU training using TensorFlow MirroredStrategy
+    """
+    
+    def __init__(self, strategy_type: str = 'mirrored'):
+        """
+        Initialize distributed trainer
+        
+        Args:
+            strategy_type: Distribution strategy ('mirrored', 'parameter_server')
+        """
+        self.strategy_type = strategy_type
+        self.strategy = None
+        self._setup_strategy()
+        logger.info(f"Initialized DistributedTrainer (strategy: {strategy_type})")
+    
+    def _setup_strategy(self):
+        """Setup TensorFlow distribution strategy"""
+        try:
+            import tensorflow as tf
+            
+            if self.strategy_type == 'mirrored':
+                # Multi-GPU on single machine
+                self.strategy = tf.distribute.MirroredStrategy()
+            elif self.strategy_type == 'multi_worker':
+                # Scaling to multiple machines
+                self.strategy = tf.distribute.MultiWorkerMirroredStrategy()
+            else:
+                # Default to default strategy (no-op)
+                self.strategy = tf.distribute.get_strategy()
+                
+            logger.info(f"Strategy setup complete: {self.strategy.num_replicas_in_sync} devices")
+            
+        except ImportError:
+            logger.warning("TensorFlow not found. Distributed training disabled.")
+            self.strategy = None
+            
+    def compile_model(self, 
+                     model_builder, 
+                     input_shape,
+                     learning_rate: float = 0.001):
+        """
+        Compile model within strategy scope
+        
+        Args:
+            model_builder: Function that returns a compiled model
+            input_shape: Input shape for the model
+            learning_rate: Learning rate
+            
+        Returns:
+            Distributed model
+        """
+        if self.strategy:
+            with self.strategy.scope():
+                model = model_builder(input_shape, learning_rate)
+        else:
+            # Fallback to normal compilation
+            model = model_builder(input_shape, learning_rate)
+            
+        return model
+    
+    def train_distributed(self,
+                         model,
+                         train_data: tuple,
+                         val_data: tuple,
+                         epochs: int = 100,
+                         batch_size: int = 32):
+        """
+        Train model using distributed strategy
+        
+        Args:
+            model: Compiled model
+            train_data: (X_train, y_train)
+            val_data: (X_val, y_val)
+            epochs: Number of epochs
+            batch_size: Global batch size
+            
+        Returns:
+            Training history
+        """
+        X_train, y_train = train_data
+        X_val, y_val = val_data
+        
+        # Scale batch size by number of replicas
+        if self.strategy:
+            global_batch_size = batch_size * self.strategy.num_replicas_in_sync
+        else:
+            global_batch_size = batch_size
+            
+        logger.info(f"Starting distributed training (global_batch_size={global_batch_size})")
+        
+        history = model.fit(
+            X_train, y_train,
+            epochs=epochs,
+            batch_size=global_batch_size,
+            validation_data=(X_val, y_val),
+            verbose=1
+        )
+        
+        return history
+    
+    def get_strategy_info(self) -> dict:
+        """Get strategy configuration info"""
+        if not self.strategy:
+            return {'status': 'disabled'}
+        
+        return {
+            'strategy_type': self.strategy_type,
+            'num_replicas': self.strategy.num_replicas_in_sync,
+            'worker_devices': self.strategy.extended.worker_devices
+        }
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train RUL prediction models')
     parser.add_argument('--dataset', type=str, default='FD001',
