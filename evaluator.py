@@ -1242,6 +1242,140 @@ class ModelValidator:
         return '\n'.join(lines)
 
 
+        return '\n'.join(lines)
+
+
+class ErrorAnalyzer:
+    """
+    Deep dive error analysis
+    Analyzes prediction errors by segments, quantiles, and distribution
+    """
+    
+    def __init__(self):
+        """Initialize error analyzer"""
+        logger.info("Initialized ErrorAnalyzer")
+    
+    def analyze_errors(self, 
+                      y_true: np.ndarray, 
+                      y_pred: np.ndarray) -> Dict:
+        """
+        Perform comprehensive error analysis
+        
+        Args:
+            y_true: True RUL values
+            y_pred: Predicted RUL values
+            
+        Returns:
+            Dictionary containing error analysis metrics
+        """
+        errors = y_pred - y_true
+        abs_errors = np.abs(errors)
+        
+        analysis = {
+            'distribution': self._analyze_distribution(errors),
+            'segmentation': self._analyze_rul_segments(y_true, errors),
+            'prediction_bias': self._analyze_bias(y_pred, y_true),
+            'outliers': self._analyze_outliers(errors)
+        }
+        
+        return analysis
+    
+    def _analyze_distribution(self, errors: np.ndarray) -> Dict:
+        """Analyze error distribution"""
+        return {
+            'mean': float(np.mean(errors)),
+            'std': float(np.std(errors)),
+            'skew': float(pd.Series(errors).skew()),
+            'kurtosis': float(pd.Series(errors).kurtosis()),
+            'quantiles': {
+                'q25': float(np.percentile(errors, 25)),
+                'q50': float(np.percentile(errors, 50)),
+                'q75': float(np.percentile(errors, 75))
+            }
+        }
+    
+    def _analyze_rul_segments(self, y_true: np.ndarray, errors: np.ndarray) -> Dict:
+        """Analyze errors by RUL range (Short, Medium, Long)"""
+        segments = {
+            'Short (<50)': {'mask': y_true < 50},
+            'Medium (50-100)': {'mask': (y_true >= 50) & (y_true < 100)},
+            'Long (>=100)': {'mask': y_true >= 100}
+        }
+        
+        results = {}
+        for name, data in segments.items():
+            mask = data['mask']
+            if np.any(mask):
+                segment_errors = errors[mask]
+                results[name] = {
+                    'mae': float(np.mean(np.abs(segment_errors))),
+                    'rmse': float(np.sqrt(np.mean(segment_errors**2))),
+                    'count': int(np.sum(mask))
+                }
+            else:
+                results[name] = 'No samples'
+                
+        return results
+    
+    def _analyze_bias(self, y_pred: np.ndarray, y_true: np.ndarray) -> Dict:
+        """Analyze prediction bias (over vs under prediction)"""
+        over_pred = y_pred > y_true
+        under_pred = y_pred < y_true
+        
+        return {
+            'over_prediction_rate': float(np.mean(over_pred)),
+            'under_prediction_rate': float(np.mean(under_pred)),
+            'avg_over_prediction': float(np.mean(y_pred[over_pred] - y_true[over_pred])) if np.any(over_pred) else 0.0,
+            'avg_under_prediction': float(np.mean(y_true[under_pred] - y_pred[under_pred])) if np.any(under_pred) else 0.0
+        }
+    
+    def _analyze_outliers(self, errors: np.ndarray, threshold_std: float = 3.0) -> Dict:
+        """Identify outliers based on z-score"""
+        mean_error = np.mean(errors)
+        std_error = np.std(errors)
+        
+        z_scores = (errors - mean_error) / std_error
+        outliers_mask = np.abs(z_scores) > threshold_std
+        
+        return {
+            'count': int(np.sum(outliers_mask)),
+            'percentage': float(np.mean(outliers_mask)),
+            'indices': np.where(outliers_mask)[0].tolist()[:10]  # First 10 indices
+        }
+    
+    def get_analysis_report(self, analysis: Dict) -> str:
+        """Generate text report from analysis"""
+        lines = [
+            "=" * 60,
+            "ERROR ANALYSIS REPORT",
+            "=" * 60,
+            "",
+            "1. Distribution:",
+            f"   Mean Error: {analysis['distribution']['mean']:.2f}",
+            f"   Std Dev:    {analysis['distribution']['std']:.2f}",
+            f"   Skewness:   {analysis['distribution']['skew']:.2f}",
+            "",
+            "2. Segmentation (MAE):"
+        ]
+        
+        for segment, metrics in analysis['segmentation'].items():
+            if isinstance(metrics, dict):
+                lines.append(f"   {segment}: {metrics['mae']:.2f} (n={metrics['count']})")
+        
+        lines.extend([
+            "",
+            "3. Prediction Bias:",
+            f"   Over-predictions:  {analysis['prediction_bias']['over_prediction_rate']*100:.1f}%",
+            f"   Under-predictions: {analysis['prediction_bias']['under_prediction_rate']*100:.1f}%",
+            "",
+            "4. Outliers:",
+            f"   Count: {analysis['outliers']['count']} ({analysis['outliers']['percentage']*100:.1f}%)",
+            "=" * 60
+        ])
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     # Test evaluator
     print("="*60)
