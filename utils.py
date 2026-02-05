@@ -1423,6 +1423,122 @@ class ModelSerializer:
         return '\n'.join(lines)
 
 
+        return '\n'.join(lines)
+
+
+class ModelSignature:
+    """
+    Model integrity verification
+    Generates and verifies SHA256 checksums for model artifacts
+    """
+    
+    def __init__(self, key: str = None):
+        """
+        Initialize model signature
+        
+        Args:
+            key: Optional secret key for signing (HMAC)
+        """
+        self.key = key.encode() if key else None
+        logger.info("Initialized ModelSignature")
+    
+    def generate_checksum(self, filepath: str) -> str:
+        """
+        Generate SHA256 checksum for a file
+        
+        Args:
+            filepath: Path to file
+            
+        Returns:
+            Hex digest of checksum
+        """
+        import hashlib
+        
+        sha256_hash = hashlib.sha256()
+        
+        with open(filepath, "rb") as f:
+            # Read in chunks to handle large files
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        
+        return sha256_hash.hexdigest()
+    
+    def sign_model(self, model_path: str, metadata: Dict = None) -> Dict:
+        """
+        Sign a model artifact
+        
+        Args:
+            model_path: Path to model file
+            metadata: Additional metadata to include
+            
+        Returns:
+            Signature dictionary
+        """
+        import hashlib
+        import hmac
+        import json
+        
+        checksum = self.generate_checksum(model_path)
+        timestamp = datetime.now().isoformat()
+        
+        signature_data = {
+            'checksum': checksum,
+            'timestamp': timestamp,
+            'metadata': metadata or {}
+        }
+        
+        # Add HMAC signature if key is provided
+        if self.key:
+            message = json.dumps(signature_data, sort_keys=True).encode()
+            signature = hmac.new(self.key, message, hashlib.sha256).hexdigest()
+            signature_data['signature'] = signature
+        
+        logger.info(f"Signed model at {model_path} (checksum: {checksum[:8]}...)")
+        
+        return signature_data
+    
+    def verify_integrity(self, 
+                        model_path: str, 
+                        signature_data: Dict) -> bool:
+        """
+        Verify model integrity against signature
+        
+        Args:
+            model_path: Path to model file
+            signature_data: Expected signature data
+            
+        Returns:
+            True if valid
+        """
+        import hashlib
+        import hmac
+        import json
+        
+        # 1. Verify Checksum
+        current_checksum = self.generate_checksum(model_path)
+        if current_checksum != signature_data['checksum']:
+            logger.warning("Checksum mismatch! Model may be corrupted or tampered.")
+            return False
+        
+        # 2. Verify HMAC Signature (if key exists)
+        if self.key and 'signature' in signature_data:
+            expected_sig = signature_data['signature']
+            
+            # Reconstruct message
+            verify_data = signature_data.copy()
+            del verify_data['signature']
+            message = json.dumps(verify_data, sort_keys=True).encode()
+            
+            computed_sig = hmac.new(self.key, message, hashlib.sha256).hexdigest()
+            
+            if not hmac.compare_digest(expected_sig, computed_sig):
+                logger.warning("Signature mismatch! Metadata may be tampered.")
+                return False
+        
+        logger.info(f"Model integrity verified for {model_path}")
+        return True
+
+
 if __name__ == "__main__":
     logger.info("Utility functions loaded successfully")
     print("Available utility functions:")
