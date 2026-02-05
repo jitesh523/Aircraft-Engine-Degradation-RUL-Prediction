@@ -610,6 +610,163 @@ class InteractiveVisualizer:
         return html
 
 
+        return html
+
+
+class ExplainabilityVisualizer:
+    """
+    Visualizer for model explainability (SHAP)
+    """
+    
+    def __init__(self, save_dir: str = None):
+        """
+        Initialize explainability visualizer
+        
+        Args:
+            save_dir: Directory to save plots
+        """
+        self.save_dir = save_dir or config.PLOTS_DIR
+        os.makedirs(self.save_dir, exist_ok=True)
+        logger.info(f"Initialized ExplainabilityVisualizer (dir: {self.save_dir})")
+    
+    def plot_shap_summary(self, 
+                         shap_values: np.ndarray, 
+                         features: pd.DataFrame,
+                         plot_type: str = 'dot',
+                         save_filename: str = None):
+        """
+        Create SHAP summary plot
+        
+        Args:
+            shap_values: SHAP feature importance values
+            features: Feature DataFrame
+            plot_type: 'dot' or 'bar'
+            save_filename: Output filename
+        """
+        try:
+            import shap
+            
+            plt.figure(figsize=config.PLOT_CONFIG['figure_size'])
+            
+            if plot_type == 'bar':
+                shap.summary_plot(shap_values, features, plot_type='bar', show=False)
+            else:
+                shap.summary_plot(shap_values, features, show=False)
+            
+            plt.tight_layout()
+            
+            if save_filename:
+                filepath = os.path.join(self.save_dir, save_filename)
+                plt.savefig(filepath, dpi=config.PLOT_CONFIG['dpi'], bbox_inches='tight')
+                logger.info(f"Saved SHAP summary plot to {filepath}")
+            
+            plt.close()
+            
+        except ImportError:
+            logger.error("SHAP library not installed. Cannot generate explainability plots.")
+        except Exception as e:
+            logger.error(f"Error generating SHAP summary plot: {e}")
+            
+    def plot_feature_dependence(self,
+                              shap_values: np.ndarray,
+                              features: pd.DataFrame,
+                              feature_name: str,
+                              save_filename: str = None):
+        """
+        Create dependence plot for a specific feature
+        
+        Args:
+            shap_values: SHAP values
+            features: Feature DataFrame
+            feature_name: Feature to analyze
+            save_filename: Output filename
+        """
+        try:
+            import shap
+            
+            # Find feature index
+            if feature_name not in features.columns:
+                logger.error(f"Feature {feature_name} not found in columns")
+                return
+                
+            plt.figure(figsize=(10, 6))
+            
+            shap.dependence_plot(
+                feature_name, 
+                shap_values, 
+                features,
+                show=False
+            )
+            
+            plt.tight_layout()
+            
+            if save_filename:
+                filepath = os.path.join(self.save_dir, save_filename)
+                plt.savefig(filepath, dpi=config.PLOT_CONFIG['dpi'], bbox_inches='tight')
+                logger.info(f"Saved feature dependence plot to {filepath}")
+                
+            plt.close()
+            
+        except ImportError:
+            logger.error("SHAP library not installed.")
+        except Exception as e:
+            logger.error(f"Error generating dependence plot: {e}")
+
+    def plot_local_explanation(self,
+                             base_value,
+                             shap_values,
+                             features,
+                             save_filename: str = None):
+        """
+        Create waterfall plot for single prediction
+        
+        Args:
+            base_value: Model base value (expected value)
+            shap_values: Single SHAP values array
+            features: Single feature row
+            save_filename: Output filename
+        """
+        try:
+            import shap
+             # Legacy waterfall plot requires Explanation object in newer versions
+            # Or use waterfall_plot directly if available
+            
+            plt.figure(figsize=(10, 6))
+            
+            # Simple bar chart implementation if shap.waterfall_plot fails or for simplicity
+            feature_names = features.index.tolist()
+            values = shap_values
+            
+            # Sort by absolute impact
+            indices = np.argsort(np.abs(values))
+            top_indices = indices[-15:] # Top 15 features
+            
+            plt.barh(
+                [feature_names[i] for i in top_indices], 
+                [values[i] for i in top_indices],
+                color=['red' if v > 0 else 'blue' for v in [values[i] for i in top_indices]]
+            )
+            
+            plt.xlabel('SHAP Value (Impact on Output)')
+            plt.title(f'Local Explanation (Base Value: {base_value:.2f})')
+            plt.axvline(0, color='black', linestyle='-', alpha=0.2)
+            plt.grid(True, axis='x', alpha=0.3)
+            
+            plt.tight_layout()
+            
+            if save_filename:
+                filepath = os.path.join(self.save_dir, save_filename)
+                plt.savefig(filepath, dpi=config.PLOT_CONFIG['dpi'], bbox_inches='tight')
+                logger.info(f"Saved local explanation plot to {filepath}")
+                
+            plt.close()
+            
+        except ImportError:
+            logger.error("SHAP library not installed.")
+        except Exception as e:
+            logger.error(f"Error generating local explanation plot: {e}")
+
+
 if __name__ == "__main__":
     # Test visualizer
     print("="*60)
