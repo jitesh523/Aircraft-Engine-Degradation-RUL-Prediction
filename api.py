@@ -1132,6 +1132,121 @@ class FeedbackCollector:
         return '\n'.join(lines)
 
 
+        return '\n'.join(lines)
+
+
+class APIRateLimiter:
+    """
+    Rate limiter for API endpoints
+    Implements Token Bucket algorithm
+    """
+    
+    def __init__(self, rate_limit: int = 100, time_window: int = 60):
+        """
+        Initialize rate limiter
+        
+        Args:
+            rate_limit: Max requests per window
+            time_window: Window size in seconds
+        """
+        self.rate_limit = rate_limit
+        self.time_window = time_window
+        self.clients = {}
+        logger.info(f"Initialized APIRateLimiter (limit: {rate_limit}/{time_window}s)")
+    
+    def _cleanup_clients(self):
+        """Remove old client data"""
+        import time
+        current_time = time.time()
+        
+        # Remove clients with no requests in last window
+        expired = [
+            client for client, data in self.clients.items() 
+            if current_time - data['last_update'] > self.time_window
+        ]
+        
+        for client in expired:
+            del self.clients[client]
+            
+    def check_limit(self, client_id: str) -> tuple:
+        """
+        Check if client has exceeded rate limit
+        
+        Args:
+            client_id: Unique client identifier (e.g., IP)
+            
+        Returns:
+            Tuple (is_allowed, remaining_requests, reset_time)
+        """
+        import time
+        
+        current_time = time.time()
+        
+        if client_id not in self.clients:
+            self.clients[client_id] = {
+                'tokens': self.rate_limit,
+                'last_update': current_time
+            }
+        
+        client_data = self.clients[client_id]
+        
+        # Replenish tokens based on time passed
+        time_passed = current_time - client_data['last_update']
+        tokens_to_add = time_passed * (self.rate_limit / self.time_window)
+        
+        client_data['tokens'] = min(
+            self.rate_limit, 
+            client_data['tokens'] + tokens_to_add
+        )
+        client_data['last_update'] = current_time
+        
+        # Check availability
+        if client_data['tokens'] >= 1:
+            client_data['tokens'] -= 1
+            is_allowed = True
+        else:
+            is_allowed = False
+            
+        remaining = int(client_data['tokens'])
+        reset_time = int(current_time + (1 - client_data['tokens']) * (self.time_window / self.rate_limit))
+        
+        # periodic cleanup
+        if len(self.clients) > 1000:
+            self._cleanup_clients()
+            
+        return is_allowed, remaining, reset_time
+    
+    def get_middleware(self):
+        """Get FastAPI middleware function"""
+        from fastapi import Request, Response
+        from starlette.middleware.base import BaseHTTPMiddleware
+        
+        class RateLimitMiddleware(BaseHTTPMiddleware):
+            def __init__(self, app, limiter):
+                super().__init__(app)
+                self.limiter = limiter
+            
+            async def dispatch(self, request: Request, call_next):
+                client_ip = request.client.host
+                is_allowed, remaining, reset = self.limiter.check_limit(client_ip)
+                
+                response = await call_next(request)
+                
+                response.headers["X-RateLimit-Limit"] = str(self.limiter.rate_limit)
+                response.headers["X-RateLimit-Remaining"] = str(remaining)
+                response.headers["X-RateLimit-Reset"] = str(reset)
+                
+                if not is_allowed:
+                    return Response(
+                        content="Rate limit exceeded", 
+                        status_code=429
+                    )
+                
+                return response
+                
+        return RateLimitMiddleware
+
+
 if __name__ == "__main__":
     import uvicorn
     
