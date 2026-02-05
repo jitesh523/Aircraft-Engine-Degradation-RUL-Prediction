@@ -459,5 +459,150 @@ def show_model_analytics(models):
             st.metric("Unexpected Failures", "0", "-100%")
 
 
+class ReportGenerator:
+    """
+    Generate HTML summary reports for RUL predictions
+    Embeds metrics, status, and visualization placeholders
+    """
+    
+    def __init__(self, output_dir: str = None):
+        """
+        Initialize report generator
+        
+        Args:
+            output_dir: Directory to save reports
+        """
+        import os
+        from config import RESULTS_DIR
+        
+        self.output_dir = output_dir or os.path.join(RESULTS_DIR, 'reports')
+        os.makedirs(self.output_dir, exist_ok=True)
+    
+    def generate_report(self, 
+                       results_df: pd.DataFrame, 
+                       title: str = "RUL Prediction Report") -> str:
+        """
+        Generate HTML report
+        
+        Args:
+            results_df: DataFrame with results
+            title: Report title
+            
+        Returns:
+            Path to generated report
+        """
+        from datetime import datetime
+        
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        filename = f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        filepath = os.path.join(self.output_dir, filename)
+        
+        # Calculate summary metrics
+        total = len(results_df)
+        critical = len(results_df[results_df['health_status'] == 'Critical'])
+        warning = len(results_df[results_df['health_status'] == 'Warning'])
+        healthy = len(results_df[results_df['health_status'] == 'Healthy'])
+        
+        avg_rul = results_df['predicted_rul'].mean()
+        min_rul = results_df['predicted_rul'].min()
+        
+        # Correctly format table rows
+        rows = ""
+        for _, row in results_df.head(20).iterrows():
+             status_class = row['health_status'].lower()
+             rows += f"""
+             <tr>
+                 <td>{row.get('unit_id', 'N/A')}</td>
+                 <td>{row['predicted_rul']:.1f}</td>
+                 <td class="status-{status_class}">{row['health_status']}</td>
+                 <td>{row.get('confidence', 'N/A')}</td>
+             </tr>
+             """
+        
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{title}</title>
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 40px; }}
+                .header {{ text-align: center; color: #1f77b4; }}
+                .summary-box {{ 
+                    display: flex; 
+                    justify-content: space-around; 
+                    background: #f0f2f6; 
+                    padding: 20px; 
+                    border-radius: 10px;
+                    margin-bottom: 30px;
+                }}
+                .metric {{ text-align: center; }}
+                .value {{ font-size: 24px; font-weight: bold; }}
+                .label {{ color: #666; }}
+                table {{ width: 100%; border-collapse: collapse; }}
+                th, td {{ padding: 12px; border-bottom: 1px solid #ddd; text-align: left; }}
+                th {{ background-color: #f8f9fa; }}
+                .status-critical {{ color: #d62728; font-weight: bold; }}
+                .status-warning {{ color: #ff7f0e; font-weight: bold; }}
+                .status-healthy {{ color: #2ca02c; font-weight: bold; }}
+                .footer {{ margin-top: 50px; font-size: 12px; color: #999; text-align: center; }}
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>{title}</h1>
+                <p>Generated on {timestamp}</p>
+            </div>
+            
+            <div class="summary-box">
+                <div class="metric">
+                    <div class="value">{total}</div>
+                    <div class="label">Total Engines</div>
+                </div>
+                <div class="metric">
+                    <div class="value" style="color: #d62728">{critical}</div>
+                    <div class="label">Critical</div>
+                </div>
+                <div class="metric">
+                    <div class="value" style="color: #ff7f0e">{warning}</div>
+                    <div class="label">Warning</div>
+                </div>
+                <div class="metric">
+                    <div class="value" style="color: #2ca02c">{healthy}</div>
+                    <div class="label">Healthy</div>
+                </div>
+                <div class="metric">
+                    <div class="value">{avg_rul:.1f}</div>
+                    <div class="label">Avg RUL</div>
+                </div>
+            </div>
+            
+            <h2>Detailed Results (Top 20)</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Unit ID</th>
+                        <th>Predicted RUL</th>
+                        <th>Status</th>
+                        <th>Confidence</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+            
+            <div class="footer">
+                Aircraft Engine RUL Prediction System • Phase 11 Report
+            </div>
+        </body>
+        </html>
+        """
+        
+        with open(filepath, "w") as f:
+            f.write(html_content)
+        
+        return filepath
+
+
 if __name__ == "__main__":
     main()
