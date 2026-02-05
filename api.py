@@ -1007,6 +1007,131 @@ class DeploymentManager:
         return '\n'.join(lines)
 
 
+class FeedbackCollector:
+    """
+    Collects and analyzes prediction feedback
+    Stores ground truth for drift detection and retraining
+    """
+    
+    def __init__(self, storage_dir: str = None):
+        """
+        Initialize feedback collector
+        
+        Args:
+            storage_dir: Directory to store feedback data
+        """
+        import os
+        from config import DATA_DIR
+        
+        self.storage_dir = storage_dir or os.path.join(DATA_DIR, 'feedback')
+        os.makedirs(self.storage_dir, exist_ok=True)
+        
+        self.feedback_buffer = []
+        logger.info(f"Initialized FeedbackCollector (dir: {self.storage_dir})")
+    
+    def log_feedback(self,
+                    request_id: str,
+                    prediction: float,
+                    actual_rul: float,
+                    metadata: Dict = None):
+        """
+        Log feedback for a prediction
+        
+        Args:
+            request_id: ID of the prediction request
+            prediction: Predicted RUL
+            actual_rul: Actual/Ground Truth RUL
+            metadata: Additional context
+        """
+        from datetime import datetime
+        
+        feedback = {
+            'request_id': request_id,
+            'prediction': float(prediction),
+            'actual': float(actual_rul),
+            'error': float(prediction - actual_rul),
+            'timestamp': datetime.now().isoformat(),
+            'metadata': metadata or {}
+        }
+        
+        self.feedback_buffer.append(feedback)
+        
+        # Persist if buffer gets large
+        if len(self.feedback_buffer) >= 100:
+            self._flush_buffer()
+        
+        logger.info(f"Logged feedback for {request_id}: error={feedback['error']:.2f}")
+    
+    def _flush_buffer(self):
+        """Save buffered feedback to disk"""
+        import pandas as pd
+        import os
+        from datetime import datetime
+        
+        if not self.feedback_buffer:
+            return
+        
+        filename = f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.parquet"
+        filepath = os.path.join(self.storage_dir, filename)
+        
+        df = pd.DataFrame(self.feedback_buffer)
+        df.to_parquet(filepath)
+        
+        self.feedback_buffer = []
+        logger.info(f"Flushed feedback to {filename}")
+    
+    def get_feedback_stats(self) -> Dict:
+        """
+        Calculate statistics from recent feedback
+        
+        Returns:
+            Dictionary of error metrics
+        """
+        import numpy as np
+        
+        if not self.feedback_buffer:
+            return {'status': 'no_recent_data'}
+        
+        errors = [f['error'] for f in self.feedback_buffer]
+        abs_errors = [abs(e) for e in errors]
+        
+        stats = {
+            'count': len(errors),
+            'rmse': float(np.sqrt(np.mean(np.square(errors)))),
+            'mae': float(np.mean(abs_errors)),
+            'bias': float(np.mean(errors)),
+            'max_error': float(np.max(abs_errors))
+        }
+        
+        return stats
+    
+    def get_feedback_summary(self) -> str:
+        """Generate feedback summary report"""
+        stats = self.get_feedback_stats()
+        
+        lines = [
+            "=" * 60,
+            "FEEDBACK SUMMARY (Recent)",
+            "=" * 60,
+            ""
+        ]
+        
+        if 'count' in stats:
+            lines.extend([
+                f"Samples: {stats['count']}",
+                f"RMSE: {stats['rmse']:.2f}",
+                f"MAE:  {stats['mae']:.2f}",
+                f"Bias: {stats['bias']:.2f}",
+                f"Max Error: {stats['max_error']:.2f}"
+            ])
+        else:
+            lines.append("No recent feedback data available.")
+        
+        lines.append("=" * 60)
+        
+        return '\n'.join(lines)
+
+
 if __name__ == "__main__":
     import uvicorn
     
