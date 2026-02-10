@@ -24,6 +24,9 @@ from ensemble_predictor import EnsemblePredictor
 from uncertainty_quantifier import UncertaintyQuantifier
 from maintenance_planner import MaintenancePlanner
 from shap_explainer import SHAPExplainer
+from iv_estimator import IVEstimator
+from power_calculator import PowerCalculator
+from model_monitor import ModelMonitor
 
 # Page configuration
 st.set_page_config(
@@ -209,7 +212,8 @@ def main():
     # Mode selection
     mode = st.sidebar.radio(
         "Select Mode",
-        ["📊 Quick Prediction", "📁 Batch Upload", "📈 Model Analytics"]
+        ["📊 Quick Prediction", "📁 Batch Upload", "📈 Model Analytics", 
+         "🔍 Causal Inference", "🧪 Experiment Design", "imestamp Drift Monitoring"]
     )
     
     # Load models
@@ -228,8 +232,14 @@ def main():
         show_quick_prediction(models)
     elif mode == "📁 Batch Upload":
         show_batch_upload(models)
-    else:
+    elif mode == "📈 Model Analytics":
         show_model_analytics(models)
+    elif mode == "🔍 Causal Inference":
+        show_causal_inference()
+    elif mode == "🧪 Experiment Design":
+        show_experiment_design()
+    else:
+        show_drift_monitoring()
 
 
 def show_quick_prediction(models):
@@ -606,3 +616,128 @@ class ReportGenerator:
 
 if __name__ == "__main__":
     main()
+
+def show_causal_inference():
+    """Causal Inference Tab"""
+    st.header("🔍 Causal Inference & Policy Analysis")
+    
+    st.markdown("""
+    Use Instrumental Variables (IV) to estimate causal effects when controlled experiments aren't possible.
+    This helps in understanding the true impact of maintenance policies or operating conditions on RUL.
+    """)
+    
+    st.info("💡 Usage: upload observational data where treatment assignment might be biased (confounded).")
+    
+    uploaded_file = st.file_uploader("Upload Observational Data (CSV)", type=['csv'])
+    
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.write("Data Preview:", df.head())
+        
+        col1, col2, col3 = st.columns(3)
+        cols = df.columns.tolist()
+        
+        with col1:
+            treatment = st.selectbox("Treatment Variable (X)", cols, index=0 if len(cols)>0 else 0)
+        with col2:
+            outcome = st.selectbox("Outcome Variable (Y)", cols, index=1 if len(cols)>1 else 0)
+        with col3:
+            instrument = st.selectbox("Instrument (Z)", cols, index=2 if len(cols)>2 else 0)
+            
+        if st.button("Run IV Estimation"):
+            estimator = IVEstimator()
+            
+            with st.spinner("Estimating causal effect..."):
+                results = estimator.estimate_effect(df, outcome, treatment, instrument)
+                
+                if 'error' in results:
+                    st.error(f"Estimation failed: {results['error']}")
+                else:
+                    st.markdown("### Estimation Results")
+                    
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Causal Effect", f"{results['effect_size']:.4f}", help="Estimated impact of X on Y")
+                    c2.metric("P-Value", f"{results['p_value']:.4f}", help="Significance of the effect")
+                    c3.metric("Instrument Strength", results['instrument_strength'], help="F-statistic of first stage")
+                    
+                    st.markdown("#### Diagnostic Plots")
+                    fig = estimator.plot_iv_results(df, outcome, treatment)
+                    if fig:
+                        st.pyplot(fig)
+
+def show_experiment_design():
+    """Experiment Design Tab"""
+    st.header("🧪 A/B Test Experiment Design")
+    
+    st.markdown("Calculate required sample size or power for your maintenance experiments.")
+    
+    calc = PowerCalculator()
+    
+    tab1, tab2 = st.tabs(["Sample Size Calculator", "Power Analysis"])
+    
+    with tab1:
+        st.subheader("Required Sample Size")
+        
+        c1, c2, c3 = st.columns(3)
+        effect_size = c1.number_input("Effect Size (Cohen's d)", 0.1, 2.0, 0.5, 0.1)
+        power = c2.slider("Desired Power (1-\u03b2)", 0.5, 0.99, 0.8)
+        alpha = c3.selectbox("Significance Level (\u03b1)", [0.01, 0.05, 0.10], index=1)
+        
+        if st.button("Calculate Sample Size"):
+            n = calc.calculate_sample_size(effect_size, alpha, power)
+            st.success(f"Required Sample Size: **{n}** per group")
+            
+            st.markdown("#### Power Curve")
+            fig = calc.plot_power_curve(effect_sizes=[0.2, 0.5, 0.8], alpha=alpha)
+            st.pyplot(fig)
+            
+    with tab2:
+        st.subheader("Post-hoc Power Analysis")
+        
+        c1, c2 = st.columns(2)
+        n_obs = c1.number_input("Observed Sample Size", 10, 10000, 100)
+        obs_effect = c2.number_input("Observed Effect Size", 0.0, 2.0, 0.3)
+        
+        if st.button("Calculate Power"):
+            achieved_power = calc.calculate_power(n_obs, obs_effect)
+            st.metric("Achieved Power", f"{achieved_power:.4f}")
+            
+            if achieved_power < 0.8:
+                st.warning("⚠️ Low power! Results may be inconclusive.")
+            else:
+                st.success("✅ Sufficient power.")
+
+def show_drift_monitoring():
+    """Drift Monitoring Tab"""
+    st.header("imestamp Drift Monitoring")
+    
+    st.markdown("Monitor model performance and data stability over time.")
+    
+    # Mock data for demonstration
+    c1, c2 = st.columns(2)
+    
+    with c1:
+        st.markdown("### Feature Drift (PSI)")
+        # In a real app, this would come from the ModelMonitor class
+        drift_data = pd.DataFrame({
+            'Feature': ['Sensor 11', 'Sensor 4', 'Sensor 9', 'Sensor 12'],
+            'PSI': [0.02, 0.15, 0.25, 0.05],
+            'Status': ['Stable', 'Warning', 'Critical', 'Stable']
+        })
+        st.dataframe(drift_data, use_container_width=True)
+        
+    with c2:
+        st.markdown("### Concept Drift Status")
+        st.metric("RUL Distribution Shift", "Detected", delta="-12%", delta_color="inverse")
+        st.metric("Covariate Shift", "Moderate", delta="Warning", delta_color="off")
+    
+    st.markdown("### Distribution Comparison")
+    # Placeholder for distribution plots
+    x1 = np.random.normal(0, 1, 1000)
+    x2 = np.random.normal(0.5, 1.2, 1000)
+    
+    fig = go.Figure()
+    fig.add_trace(go.Histogram(x=x1, name='Baseline', opacity=0.75))
+    fig.add_trace(go.Histogram(x=x2, name='Current', opacity=0.75))
+    fig.update_layout(barmode='overlay', title='Sensor 9 Distribution Shift')
+    st.plotly_chart(fig, use_container_width=True)
