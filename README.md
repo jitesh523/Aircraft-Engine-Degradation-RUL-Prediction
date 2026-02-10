@@ -38,6 +38,11 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 - **Fleet Health Scoring**: Real-time fleet-wide health metrics and prioritized maintenance queues
 - **Model Comparison Utility**: Statistical significance testing and detailed error analysis by RUL ranges
 
+#### Causal Analytics & Monitoring (Phase 5)
+- **Instrumental Variables (IV) Estimator**: 2SLS regression for causal inference in observational data
+- **Power Calculator**: Experiment design tools for A/B testing sample size and power analysis
+- **Drift Monitoring Dashboard**: Real-time tracking of feature drift (PSI) and concept drift in the Streamlit dashboard
+
 ## Dataset
 
 The NASA C-MAPSS dataset contains run-to-failure data from turbofan engine simulations with varying operating conditions and fault modes:
