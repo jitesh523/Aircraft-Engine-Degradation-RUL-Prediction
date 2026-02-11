@@ -27,6 +27,8 @@ from shap_explainer import SHAPExplainer
 from iv_estimator import IVEstimator
 from power_calculator import PowerCalculator
 from model_monitor import ModelMonitor
+from llm_assistant import MaintenanceAssistant
+from rl_agent import MaintenanceRLAgent, MaintenanceEnv
 
 # Page configuration
 st.set_page_config(
@@ -213,7 +215,8 @@ def main():
     mode = st.sidebar.radio(
         "Select Mode",
         ["📊 Quick Prediction", "📁 Batch Upload", "📈 Model Analytics", 
-         "🔍 Causal Inference", "🧪 Experiment Design", "imestamp Drift Monitoring"]
+         "🔍 Causal Inference", "🧪 Experiment Design", "📡 Drift Monitoring",
+         "🤖 AI Assistant", "🧠 RL Optimization"]
     )
     
     # Load models
@@ -238,8 +241,12 @@ def main():
         show_causal_inference()
     elif mode == "🧪 Experiment Design":
         show_experiment_design()
-    else:
+    elif mode == "📡 Drift Monitoring":
         show_drift_monitoring()
+    elif mode == "🤖 AI Assistant":
+        show_ai_assistant()
+    elif mode == "🧠 RL Optimization":
+        show_rl_optimization()
 
 
 def show_quick_prediction(models):
@@ -614,6 +621,189 @@ class ReportGenerator:
         return filepath
 
 
+def show_ai_assistant():
+    """AI Assistant Chat Tab – powered by Gemini LLM."""
+    st.header("🤖 AI Maintenance Assistant")
+    st.markdown("Ask questions about your fleet health, get maintenance recommendations, or generate reports – all in plain English.")
+
+    # Initialise assistant once
+    if 'llm_assistant' not in st.session_state:
+        st.session_state['llm_assistant'] = MaintenanceAssistant()
+    if 'chat_history' not in st.session_state:
+        st.session_state['chat_history'] = []
+
+    assistant = st.session_state['llm_assistant']
+
+    # ---- Quick actions ----
+    st.markdown("### ⚡ Quick Actions")
+    col1, col2, col3 = st.columns(3)
+
+    # Generate sample fleet data for context
+    np.random.seed(42)
+    sample_fleet = pd.DataFrame({
+        'unit_id': range(1, 51),
+        'RUL_pred': np.random.randint(5, 140, size=50).astype(float)
+    })
+
+    with col1:
+        if st.button("📋 Fleet Summary", use_container_width=True):
+            with st.spinner("Generating fleet summary…"):
+                summary = assistant.generate_fleet_summary(sample_fleet)
+                st.session_state['chat_history'].append({'role': 'assistant', 'content': summary})
+
+    with col2:
+        if st.button("📝 Full Report", use_container_width=True):
+            with st.spinner("Generating maintenance report…"):
+                report = assistant.generate_maintenance_report(sample_fleet)
+                st.session_state['chat_history'].append({'role': 'assistant', 'content': report})
+
+    with col3:
+        if st.button("🔍 Critical Engines", use_container_width=True):
+            with st.spinner("Analysing critical engines…"):
+                answer = assistant.answer_question(
+                    "List all critical engines and recommend immediate actions for each.",
+                    predictions_df=sample_fleet
+                )
+                st.session_state['chat_history'].append({'role': 'assistant', 'content': answer})
+
+    st.markdown("---")
+
+    # ---- Chat interface ----
+    st.markdown("### 💬 Chat with your Fleet")
+
+    # Display conversation history
+    for msg in st.session_state['chat_history']:
+        role = msg['role']
+        with st.chat_message(role):
+            st.markdown(msg['content'])
+
+    # User input
+    user_input = st.chat_input("Ask anything about your fleet health…")
+    if user_input:
+        st.session_state['chat_history'].append({'role': 'user', 'content': user_input})
+        with st.chat_message('user'):
+            st.markdown(user_input)
+
+        with st.chat_message('assistant'):
+            with st.spinner("Thinking…"):
+                response = assistant.chat(
+                    user_input,
+                    chat_history=st.session_state['chat_history'],
+                    predictions_df=sample_fleet
+                )
+                st.markdown(response)
+        st.session_state['chat_history'].append({'role': 'assistant', 'content': response})
+
+    # Clear chat button
+    if st.button("🗑️ Clear Chat"):
+        st.session_state['chat_history'] = []
+        st.rerun()
+
+
+def show_rl_optimization():
+    """RL Optimization Tab – train and compare RL agent vs baseline."""
+    st.header("🧠 RL-Based Maintenance Optimization")
+    st.markdown(
+        "Train a Reinforcement Learning agent that **learns** the optimal maintenance policy "
+        "instead of relying on fixed RUL thresholds. Compare costs and failure rates side-by-side."
+    )
+
+    # --- Configuration sidebar ---
+    st.markdown("### ⚙️ Simulation Settings")
+    col1, col2, col3 = st.columns(3)
+    n_engines = col1.slider("Fleet Size", 10, 200, 50)
+    max_steps = col2.slider("Sim Horizon (cycles)", 50, 500, 200)
+    n_episodes = col3.slider("Training Episodes", 100, 2000, 500, step=100)
+
+    if st.button("🚀 Train RL Agent", type="primary"):
+        env = MaintenanceEnv(n_engines=n_engines, max_steps=max_steps)
+        agent = MaintenanceRLAgent(
+            learning_rate=0.1,
+            discount_factor=0.95,
+            epsilon=1.0,
+            epsilon_decay=0.995
+        )
+
+        progress_bar = st.progress(0, text="Training RL agent…")
+        status_text = st.empty()
+
+        # Train in chunks so we can update the progress bar
+        chunk_size = max(1, n_episodes // 20)
+        for i in range(0, n_episodes, chunk_size):
+            episodes_this_chunk = min(chunk_size, n_episodes - i)
+            agent.train(env, n_episodes=episodes_this_chunk, verbose=False)
+            pct = min((i + episodes_this_chunk) / n_episodes, 1.0)
+            progress_bar.progress(pct, text=f"Training… {int(pct*100)}%")
+
+        progress_bar.progress(1.0, text="Training complete ✅")
+
+        # Store in session
+        st.session_state['rl_agent'] = agent
+        st.session_state['rl_env'] = env
+
+        # --- Evaluation ---
+        st.markdown("---")
+        st.markdown("### 📊 Results")
+
+        comparison_df = agent.compare_with_baseline(env, n_episodes=50)
+        st.session_state['rl_comparison'] = comparison_df
+
+        # Display comparison table
+        st.dataframe(comparison_df[['method', 'avg_cost', 'avg_failures', 'std_cost']],
+                     use_container_width=True)
+
+        # Side-by-side metrics
+        baseline = comparison_df.iloc[0]
+        rl = comparison_df.iloc[1]
+
+        c1, c2, c3 = st.columns(3)
+        cost_delta = rl['avg_cost'] - baseline['avg_cost']
+        fail_delta = rl['avg_failures'] - baseline['avg_failures']
+        c1.metric("Avg Cost (RL)", f"${rl['avg_cost']:,.0f}",
+                  delta=f"${cost_delta:,.0f}", delta_color="inverse")
+        c2.metric("Avg Failures (RL)", f"{rl['avg_failures']:.1f}",
+                  delta=f"{fail_delta:.1f}", delta_color="inverse")
+
+        cost_pct = (cost_delta / baseline['avg_cost'] * 100) if baseline['avg_cost'] else 0
+        c3.metric("Cost Improvement", f"{abs(cost_pct):.1f}%",
+                  delta="Better" if cost_pct < 0 else "Worse",
+                  delta_color="normal" if cost_pct < 0 else "inverse")
+
+        # Training curve
+        st.markdown("### 📈 Training Curve")
+        history = agent.training_history
+
+        fig = make_subplots(rows=1, cols=2,
+                            subplot_titles=("Episode Reward", "Episode Cost"))
+        fig.add_trace(
+            go.Scatter(y=history['episode_rewards'], mode='lines',
+                       name='Reward', line=dict(color='#1f77b4')),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(y=history['episode_costs'], mode='lines',
+                       name='Cost ($)', line=dict(color='#d62728')),
+            row=1, col=2
+        )
+        fig.update_layout(height=350, showlegend=False)
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Learned policy summary
+        st.markdown("### 🗺️ Learned Policy")
+        policy = agent.get_policy_summary()
+        policy_rows = []
+        for state_desc, info in policy.items():
+            policy_rows.append({
+                'State': state_desc,
+                'Recommended Action': info['action'],
+                'Confidence': f"{info['confidence']:.2f}"
+            })
+        if policy_rows:
+            st.dataframe(pd.DataFrame(policy_rows), use_container_width=True)
+        else:
+            st.info("No policy entries yet. Train longer for richer policies.")
+
+
 if __name__ == "__main__":
     main()
 
@@ -709,7 +899,7 @@ def show_experiment_design():
 
 def show_drift_monitoring():
     """Drift Monitoring Tab"""
-    st.header("imestamp Drift Monitoring")
+    st.header("📡 Drift Monitoring")
     
     st.markdown("Monitor model performance and data stability over time.")
     
