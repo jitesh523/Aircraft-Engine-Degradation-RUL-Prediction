@@ -26,3 +26,4 @@ skl2onnx>=1.16.0
 tf2onnx>=1.16.0
 
 statsmodels>=0.14.0
+google-generativeai>=0.3.0
