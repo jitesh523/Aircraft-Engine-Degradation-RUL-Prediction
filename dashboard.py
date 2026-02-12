@@ -29,6 +29,8 @@ from power_calculator import PowerCalculator
 from model_monitor import ModelMonitor
 from llm_assistant import MaintenanceAssistant
 from rl_agent import MaintenanceRLAgent, MaintenanceEnv
+from survival_analyzer import SurvivalAnalyzer
+from multi_dataset_trainer import MultiDatasetTrainer
 
 # Page configuration
 st.set_page_config(
@@ -216,7 +218,8 @@ def main():
         "Select Mode",
         ["📊 Quick Prediction", "📁 Batch Upload", "📈 Model Analytics", 
          "🔍 Causal Inference", "🧪 Experiment Design", "📡 Drift Monitoring",
-         "🤖 AI Assistant", "🧠 RL Optimization"]
+         "🤖 AI Assistant", "🧠 RL Optimization",
+         "📉 Survival Analysis", "🛰️ Fleet Ops Center"]
     )
     
     # Load models
@@ -247,6 +250,10 @@ def main():
         show_ai_assistant()
     elif mode == "🧠 RL Optimization":
         show_rl_optimization()
+    elif mode == "📉 Survival Analysis":
+        show_survival_analysis()
+    elif mode == "🛰️ Fleet Ops Center":
+        show_fleet_ops_center()
 
 
 def show_quick_prediction(models):
@@ -931,3 +938,188 @@ def show_drift_monitoring():
     fig.add_trace(go.Histogram(x=x2, name='Current', opacity=0.75))
     fig.update_layout(barmode='overlay', title='Sensor 9 Distribution Shift')
     st.plotly_chart(fig, use_container_width=True)
+
+
+def show_survival_analysis():
+    """Survival Analysis Tab — Kaplan-Meier and Cox PH."""
+    st.header("📉 Survival Analysis")
+    st.markdown(
+        "Estimate engine **time-to-failure probability distributions** using "
+        "Kaplan-Meier and Cox Proportional Hazards models."
+    )
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+    except Exception as e:
+        st.error(f"Could not load data: {e}")
+        return
+
+    analyzer = SurvivalAnalyzer()
+    surv_df = analyzer.prepare_survival_data(train_df)
+
+    # --- KM ---
+    st.markdown("### 📈 Kaplan-Meier Survival Curve")
+    analyzer.fit_kaplan_meier(surv_df, label='FD001 Fleet')
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Median Survival", f"{analyzer.median_survival:.0f} cycles")
+    col2.metric("Engines", len(surv_df))
+    col3.metric("Observed Failures", int(surv_df['event'].sum()))
+
+    fig_km = analyzer.plot_survival_curves("Fleet Survival Curve (FD001)")
+    st.plotly_chart(fig_km, use_container_width=True)
+
+    # --- Hazard ---
+    st.markdown("### ⚠️ Cumulative Hazard Function")
+    fig_hz = analyzer.plot_hazard_function("Cumulative Hazard — FD001")
+    st.plotly_chart(fig_hz, use_container_width=True)
+
+    # --- Group Comparison ---
+    st.markdown("### 🔀 Survival by Degradation Speed")
+    surv_df['degradation_speed'] = pd.qcut(
+        surv_df['duration'], q=3, labels=['Fast', 'Medium', 'Slow']
+    )
+    comp = analyzer.compare_groups(surv_df, 'degradation_speed')
+    fig_grp = analyzer.plot_group_comparison("Survival by Degradation Speed")
+    st.plotly_chart(fig_grp, use_container_width=True)
+
+    if 'p_value' in comp:
+        sig = '✅ Significant' if comp['significant'] else '❌ Not significant'
+        st.info(f"Log-rank test: p = {comp['p_value']:.4f} ({sig})")
+
+    # --- Cox PH ---
+    st.markdown("### 🧬 Cox Proportional Hazards")
+    cox_covs = [c for c in surv_df.columns if c.endswith('_mean') and 'sensor' in c][:8]
+    if cox_covs:
+        with st.spinner("Fitting Cox model…"):
+            cox_result = analyzer.fit_cox(surv_df, covariates=cox_covs)
+        col1, col2 = st.columns(2)
+        col1.metric("Concordance Index", f"{cox_result['concordance_index']:.3f}")
+        col2.metric("AIC", f"{cox_result['aic']:.0f}")
+        fig_cox = analyzer.plot_cox_coefficients("Top Risk Factors")
+        st.plotly_chart(fig_cox, use_container_width=True)
+    else:
+        st.info("Insufficient covariates for Cox PH model.")
+
+
+def show_fleet_ops_center():
+    """Fleet Ops Center — real-time fleet health dashboard."""
+    st.header("🛰️ Fleet Operations Center")
+    st.markdown("Live fleet health monitoring with auto-refresh, heatmaps, and maintenance queue.")
+
+    # Simulated fleet data (in production, this would come from streaming_ingestion)
+    np.random.seed(int(pd.Timestamp.now().timestamp()) % 10000)
+    n_engines = 50
+    fleet = pd.DataFrame({
+        'engine_id': [f'ENG-{i:03d}' for i in range(1, n_engines + 1)],
+        'rul_pred': np.random.randint(5, 200, n_engines).astype(float),
+        'sensor_2': np.random.normal(642, 5, n_engines),
+        'sensor_4': np.random.normal(1590, 10, n_engines),
+        'sensor_7': np.random.normal(554, 3, n_engines),
+        'sensor_11': np.random.normal(47.5, 1, n_engines),
+        'sensor_15': np.random.normal(8.5, 0.5, n_engines),
+        'lat': np.random.uniform(25, 48, n_engines),
+        'lon': np.random.uniform(-120, -75, n_engines)
+    })
+
+    fleet['status'] = pd.cut(
+        fleet['rul_pred'],
+        bins=[-1, 30, 80, 999],
+        labels=['🔴 Critical', '🟡 Warning', '🟢 Healthy']
+    )
+
+    # --- KPI Row ---
+    st.markdown("### 📊 Fleet KPIs")
+    critical = (fleet['status'] == '🔴 Critical').sum()
+    warning = (fleet['status'] == '🟡 Warning').sum()
+    healthy = (fleet['status'] == '🟢 Healthy').sum()
+    avg_rul = fleet['rul_pred'].mean()
+
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Fleet Health", f"{healthy / n_engines * 100:.0f}%")
+    k2.metric("Avg RUL", f"{avg_rul:.0f} cycles")
+    k3.metric("🔴 Critical", critical)
+    k4.metric("🟡 Warning", warning)
+
+    # --- Notifications ---
+    if critical > 0:
+        crit_engines = fleet[fleet['status'] == '🔴 Critical']['engine_id'].tolist()
+        st.error(f"🚨 **ALERT**: {critical} engines in critical state: {', '.join(crit_engines[:5])}")
+
+    # --- Health Heatmap ---
+    st.markdown("### 🗺️ Engine × Sensor Heatmap")
+    sensor_cols = ['sensor_2', 'sensor_4', 'sensor_7', 'sensor_11', 'sensor_15']
+    heatmap_data = fleet.set_index('engine_id')[sensor_cols]
+
+    # Normalize for heatmap
+    heatmap_norm = (heatmap_data - heatmap_data.mean()) / heatmap_data.std()
+
+    fig_hm = go.Figure(data=go.Heatmap(
+        z=heatmap_norm.values,
+        x=sensor_cols,
+        y=heatmap_norm.index,
+        colorscale='RdYlGn_r',
+        colorbar=dict(title='Z-Score')
+    ))
+    fig_hm.update_layout(
+        title='Sensor Anomaly Heatmap (Z-Score)',
+        height=max(400, n_engines * 12),
+        yaxis=dict(dtick=1)
+    )
+    st.plotly_chart(fig_hm, use_container_width=True)
+
+    # --- Fleet Health Gauge ---
+    st.markdown("### 🎯 Fleet Health Score")
+    health_score = (healthy * 100 + warning * 60 + critical * 10) / n_engines
+
+    fig_gauge = go.Figure(go.Indicator(
+        mode='gauge+number+delta',
+        value=health_score,
+        title={'text': 'Fleet Health Index'},
+        delta={'reference': 85, 'increasing': {'color': 'green'}},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': '#1f77b4'},
+            'steps': [
+                {'range': [0, 40], 'color': '#ff4d4d'},
+                {'range': [40, 70], 'color': '#ffcc00'},
+                {'range': [70, 100], 'color': '#2ca02c'}
+            ],
+            'threshold': {'line': {'color': 'black', 'width': 4}, 'thickness': 0.75, 'value': 85}
+        }
+    ))
+    fig_gauge.update_layout(height=300)
+    st.plotly_chart(fig_gauge, use_container_width=True)
+
+    # --- Fleet Map ---
+    st.markdown("### 🌍 Fleet Location Map")
+    color_map = {'🔴 Critical': 'red', '🟡 Warning': 'orange', '🟢 Healthy': 'green'}
+    fleet['color'] = fleet['status'].map(color_map)
+
+    fig_map = go.Figure()
+    for status_val in ['🔴 Critical', '🟡 Warning', '🟢 Healthy']:
+        mask = fleet['status'] == status_val
+        subset = fleet[mask]
+        fig_map.add_trace(go.Scattergeo(
+            lat=subset['lat'], lon=subset['lon'],
+            text=subset['engine_id'] + '<br>RUL: ' + subset['rul_pred'].astype(int).astype(str),
+            mode='markers',
+            name=status_val,
+            marker=dict(size=10, color=color_map[status_val], opacity=0.8)
+        ))
+    fig_map.update_layout(
+        title='Engine Locations',
+        geo=dict(scope='usa', showland=True, landcolor='rgb(243,243,243)'),
+        height=450
+    )
+    st.plotly_chart(fig_map, use_container_width=True)
+
+    # --- Maintenance Queue ---
+    st.markdown("### 🔧 Maintenance Priority Queue")
+    queue = fleet[['engine_id', 'rul_pred', 'status']].sort_values('rul_pred')
+    queue['priority'] = range(1, len(queue) + 1)
+    queue = queue[['priority', 'engine_id', 'rul_pred', 'status']]
+    queue.columns = ['Priority', 'Engine', 'RUL (cycles)', 'Status']
+    st.dataframe(queue, use_container_width=True, height=400)
