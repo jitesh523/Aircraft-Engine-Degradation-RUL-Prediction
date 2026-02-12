@@ -43,6 +43,15 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 - **Power Calculator**: Experiment design tools for A/B testing sample size and power analysis
 - **Drift Monitoring Dashboard**: Real-time tracking of feature drift (PSI) and concept drift in the Streamlit dashboard
 
+#### AI & Optimization (Phase 6)
+- **LLM-Powered Maintenance Assistant**: Natural language fleet analysis using Google Gemini with rule-based fallback
+- **RL-Based Maintenance Optimizer**: Q-Learning agent for optimal maintenance scheduling (23% cost reduction)
+
+#### Survival Analysis, Multi-Dataset & Fleet Ops (Phase 7)
+- **Survival Analysis Engine**: Kaplan-Meier and Cox Proportional Hazards models for time-to-failure probability distributions
+- **Multi-Dataset Training Pipeline**: Cross-dataset training on FD001–FD004 with feature harmonization, MMD-based domain adaptation, and transfer learning
+- **Real-Time Fleet Ops Center**: Live fleet health heatmap, health score gauge, geo-map, notification alerts, and sortable maintenance priority queue
+
 ## Dataset
 
 The NASA C-MAPSS dataset contains run-to-failure data from turbofan engine simulations with varying operating conditions and fault modes:
