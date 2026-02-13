@@ -31,6 +31,8 @@ from llm_assistant import MaintenanceAssistant
 from rl_agent import MaintenanceRLAgent, MaintenanceEnv
 from survival_analyzer import SurvivalAnalyzer
 from multi_dataset_trainer import MultiDatasetTrainer
+from root_cause_analyzer import RootCauseAnalyzer
+from whatif_simulator import WhatIfSimulator
 
 # Page configuration
 st.set_page_config(
@@ -219,7 +221,8 @@ def main():
         ["📊 Quick Prediction", "📁 Batch Upload", "📈 Model Analytics", 
          "🔍 Causal Inference", "🧪 Experiment Design", "📡 Drift Monitoring",
          "🤖 AI Assistant", "🧠 RL Optimization",
-         "📉 Survival Analysis", "🛰️ Fleet Ops Center"]
+         "📉 Survival Analysis", "🛰️ Fleet Ops Center",
+         "🔬 Root Cause Analysis", "🔮 What-If Simulator"]
     )
     
     # Load models
@@ -254,6 +257,10 @@ def main():
         show_survival_analysis()
     elif mode == "🛰️ Fleet Ops Center":
         show_fleet_ops_center()
+    elif mode == "🔬 Root Cause Analysis":
+        show_root_cause_analysis()
+    elif mode == "🔮 What-If Simulator":
+        show_whatif_simulator()
 
 
 def show_quick_prediction(models):
@@ -1123,3 +1130,137 @@ def show_fleet_ops_center():
     queue = queue[['priority', 'engine_id', 'rul_pred', 'status']]
     queue.columns = ['Priority', 'Engine', 'RUL (cycles)', 'Status']
     st.dataframe(queue, use_container_width=True, height=400)
+
+
+def show_root_cause_analysis():
+    """Root Cause Analysis tab — anomaly detection and failure mode matching."""
+    st.header("🔬 Root Cause Analysis")
+    st.markdown(
+        "Identify **which sensors** caused an anomaly and match deviations "
+        "against known **C-MAPSS failure mode patterns**."
+    )
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+    except Exception as e:
+        st.error(f"Could not load data: {e}")
+        return
+
+    analyzer = RootCauseAnalyzer()
+    analyzer.fit_baseline(train_df)
+
+    engine_ids = sorted(train_df['unit_id'].unique())
+    selected_engine = st.selectbox("Select Engine for Diagnosis", engine_ids, index=0)
+
+    engine_data = train_df[train_df['unit_id'] == selected_engine]
+
+    # Diagnosis
+    with st.spinner("Analyzing engine…"):
+        diagnosis = analyzer.generate_diagnosis(engine_data, engine_id=selected_engine)
+
+    # KPI row
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Failure Mode", diagnosis['likely_failure_mode'])
+    col2.metric("Confidence", f"{diagnosis['confidence']:.0%}")
+    col3.metric("Anomaly Rate", f"{diagnosis['anomaly_rate']:.0%}")
+
+    st.info(f"💡 **Recommendation**: {diagnosis['recommendation']}")
+
+    # Sensor deviation radar
+    st.markdown("### 📡 Sensor Deviation Radar")
+    deviations = diagnosis['top_deviations']
+    if deviations:
+        fig_radar = analyzer.plot_sensor_deviations(deviations, f"Engine {selected_engine} — Top Deviations")
+        st.plotly_chart(fig_radar, use_container_width=True)
+
+    # Failure mode matching
+    st.markdown("### 🔥 Failure Mode Matching")
+    matches = diagnosis['failure_mode_matches']
+    if matches:
+        fig_bar = analyzer.plot_failure_mode_match(matches, "Failure Mode Confidence Scores")
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    # Detail table
+    st.markdown("### 📋 Top Sensor Deviations")
+    if deviations:
+        dev_df = pd.DataFrame(deviations)
+        dev_df = dev_df[['sensor', 'z_score', 'direction', 'current_value', 'baseline_mean']]
+        dev_df.columns = ['Sensor', 'Z-Score', 'Direction', 'Current', 'Baseline']
+        st.dataframe(dev_df, use_container_width=True)
+
+
+def show_whatif_simulator():
+    """What-If Simulator tab — counterfactual maintenance scenarios."""
+    st.header("🔮 What-If Scenario Simulator")
+    st.markdown(
+        "Run **counterfactual simulations** to answer questions like "
+        "*\"What if we delay maintenance by 30 cycles?\"* or "
+        "*\"Which fleet strategy minimizes total cost?\"*"
+    )
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+    except Exception as e:
+        st.error(f"Could not load data: {e}")
+        return
+
+    sim = WhatIfSimulator()
+    sim.learn_degradation_rates(train_df)
+
+    tab1, tab2 = st.tabs(["⏱️ Delayed Maintenance", "🏭 Fleet Strategy"])
+
+    # --- Tab 1: Delayed Maintenance ---
+    with tab1:
+        st.markdown("### How does delay affect risk and cost?")
+        col1, col2 = st.columns(2)
+        current_rul = col1.slider("Current RUL (cycles)", 10, 200, 60)
+        delay = col2.slider("Maintenance Delay (cycles)", 5, 150, 40)
+
+        scenario = sim.simulate_delayed_maintenance(current_rul, delay)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Final RUL", f"{scenario['final_rul']:.0f} cycles")
+        m2.metric("Risk Level", scenario['risk_level'])
+        m3.metric("Est. Cost", f"${scenario['estimated_cost']:,.0f}")
+
+        if scenario['failure_occurred']:
+            st.error(f"⚠️ Engine FAILURE predicted at cycle {scenario['failure_cycle']}!")
+
+        fig_delay = sim.plot_delayed_maintenance(scenario, "Projected RUL Over Delay Period")
+        st.plotly_chart(fig_delay, use_container_width=True)
+
+    # --- Tab 2: Fleet Strategy Comparison ---
+    with tab2:
+        st.markdown("### Compare fleet maintenance strategies")
+        n_engines = st.slider("Fleet Size", 10, 100, 50)
+        horizon = st.slider("Simulation Horizon (cycles)", 50, 500, 200)
+
+        if st.button("🚀 Run Fleet Simulation"):
+            fleet_ruls = np.random.uniform(20, 150, n_engines)
+            results = []
+            for strat in ['proactive', 'reactive', 'fixed_interval']:
+                r = sim.simulate_fleet_scenario(fleet_ruls.copy(), strategy=strat, horizon=horizon)
+                results.append(r)
+
+            fig_comp = sim.plot_fleet_comparison(results, "Strategy Comparison")
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+            comp_df = pd.DataFrame([
+                {
+                    'Strategy': r['strategy'].title(),
+                    'Total Cost': f"${r['total_cost']:,.0f}",
+                    'Failures': r['total_failures'],
+                    'Maintenances': r['total_maintenances'],
+                    'Availability': f"{r['avg_availability']:.1%}"
+                }
+                for r in results
+            ])
+            st.dataframe(comp_df, use_container_width=True)

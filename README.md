@@ -52,6 +52,11 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 - **Multi-Dataset Training Pipeline**: Cross-dataset training on FD001–FD004 with feature harmonization, MMD-based domain adaptation, and transfer learning
 - **Real-Time Fleet Ops Center**: Live fleet health heatmap, health score gauge, geo-map, notification alerts, and sortable maintenance priority queue
 
+#### Federated Learning, Root Cause & What-If (Phase 8)
+- **Federated Learning Simulator**: Privacy-preserving distributed training across airline sites using FedAvg — trains without sharing raw sensor data
+- **Anomaly Root Cause Analyzer**: Identifies which sensors caused anomalies, matches against known C-MAPSS failure mode patterns (HPC/Fan/LPT degradation), generates diagnostic reports
+- **What-If Scenario Simulator**: Counterfactual simulations for delayed maintenance, accelerated sensor drift, and fleet-wide strategy comparison (proactive vs reactive vs fixed-interval)
+
 ## Dataset
 
 The NASA C-MAPSS dataset contains run-to-failure data from turbofan engine simulations with varying operating conditions and fault modes:
