@@ -57,6 +57,11 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 - **Anomaly Root Cause Analyzer**: Identifies which sensors caused anomalies, matches against known C-MAPSS failure mode patterns (HPC/Fan/LPT degradation), generates diagnostic reports
 - **What-If Scenario Simulator**: Counterfactual simulations for delayed maintenance, accelerated sensor drift, and fleet-wide strategy comparison (proactive vs reactive vs fixed-interval)
 
+#### Sensor Networks, Degradation Clustering & Scheduling (Phase 9)
+- **Sensor Correlation Network**: Graph-based sensor interdependency analysis with community detection, anomaly propagation path tracing, and degradation correlation shifts
+- **Degradation Pattern Clustering**: Unsupervised K-Means clustering on trajectory features to discover engine degradation archetypes with PCA visualization and silhouette optimization
+- **Predictive Maintenance Scheduler**: Constraint-based fleet scheduling with hangar capacity limits, three strategies (priority, cost-min, balanced), Gantt charts, and utilization tracking
+
 ## Dataset
 
 The NASA C-MAPSS dataset contains run-to-failure data from turbofan engine simulations with varying operating conditions and fault modes:

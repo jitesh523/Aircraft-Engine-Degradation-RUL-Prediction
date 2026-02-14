@@ -33,6 +33,9 @@ from survival_analyzer import SurvivalAnalyzer
 from multi_dataset_trainer import MultiDatasetTrainer
 from root_cause_analyzer import RootCauseAnalyzer
 from whatif_simulator import WhatIfSimulator
+from sensor_network import SensorNetwork
+from degradation_clusterer import DegradationClusterer
+from maintenance_scheduler import MaintenanceScheduler
 
 # Page configuration
 st.set_page_config(
@@ -222,7 +225,9 @@ def main():
          "🔍 Causal Inference", "🧪 Experiment Design", "📡 Drift Monitoring",
          "🤖 AI Assistant", "🧠 RL Optimization",
          "📉 Survival Analysis", "🛰️ Fleet Ops Center",
-         "🔬 Root Cause Analysis", "🔮 What-If Simulator"]
+         "🔬 Root Cause Analysis", "🔮 What-If Simulator",
+         "🗔️ Sensor Network", "🧩 Degradation Clusters",
+         "📅 Maintenance Scheduler"]
     )
     
     # Load models
@@ -261,6 +266,12 @@ def main():
         show_root_cause_analysis()
     elif mode == "🔮 What-If Simulator":
         show_whatif_simulator()
+    elif mode == "🗔️ Sensor Network":
+        show_sensor_network()
+    elif mode == "🧩 Degradation Clusters":
+        show_degradation_clusters()
+    elif mode == "📅 Maintenance Scheduler":
+        show_maintenance_scheduler()
 
 
 def show_quick_prediction(models):
@@ -1264,3 +1275,134 @@ def show_whatif_simulator():
                 for r in results
             ])
             st.dataframe(comp_df, use_container_width=True)
+
+
+def show_sensor_network():
+    """Sensor Correlation Network tab."""
+    st.header("🗔️ Sensor Correlation Network")
+    st.markdown(
+        "Explore **sensor interdependencies** as a graph — identify hub sensors, "
+        "communities, and how anomalies propagate."
+    )
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+    except Exception as e:
+        st.error(f"Could not load data: {e}")
+        return
+
+    threshold = st.slider("Correlation Threshold", 0.3, 0.9, 0.6, 0.05)
+    net = SensorNetwork(corr_threshold=threshold)
+
+    with st.spinner("Building network…"):
+        stats = net.build_network(train_df)
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Edges", stats['n_edges'])
+    col2.metric("Communities", stats['n_communities'])
+    col3.metric("Hub Sensor", stats['hub_sensors'][0] if stats['hub_sensors'] else "None")
+
+    st.plotly_chart(net.plot_network("Sensor Correlation Graph"), use_container_width=True)
+
+    st.markdown("### 🌡️ Correlation Heatmap")
+    st.plotly_chart(net.plot_correlation_heatmap(), use_container_width=True)
+
+    st.markdown("### 📊 Community Membership")
+    st.plotly_chart(net.plot_community_summary(), use_container_width=True)
+
+    st.markdown("### 📈 Degradation Correlation Shifts")
+    shifts = net.analyze_degradation_correlation(train_df)
+    if len(shifts) > 0:
+        st.dataframe(shifts.head(10), use_container_width=True)
+    else:
+        st.info("No significant correlation shifts detected.")
+
+
+def show_degradation_clusters():
+    """Degradation Pattern Clustering tab."""
+    st.header("🧩 Degradation Pattern Clustering")
+    st.markdown(
+        "Discover **degradation archetypes** — group engines by how they degrade "
+        "to tailor maintenance strategies per archetype."
+    )
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+    except Exception as e:
+        st.error(f"Could not load data: {e}")
+        return
+
+    n_clusters = st.slider("Number of Clusters", 2, 6, 3)
+    clusterer = DegradationClusterer(n_clusters=n_clusters)
+
+    with st.spinner("Analyzing degradation patterns…"):
+        clusterer.extract_trajectory_features(train_df)
+        labels = clusterer.cluster()
+        profiles = clusterer.compute_cluster_profiles(train_df)
+
+    col1, col2 = st.columns(2)
+    col1.metric("Engines Analyzed", len(labels))
+    col2.metric("Clusters Found", n_clusters)
+
+    st.plotly_chart(clusterer.plot_clusters_2d("Engines in PCA Space"), use_container_width=True)
+    st.plotly_chart(clusterer.plot_cluster_lifetimes("Lifetime Distribution"), use_container_width=True)
+
+    st.markdown("### 📋 Cluster Profiles")
+    prof_df = pd.DataFrame([
+        {
+            'Cluster': cid,
+            'Archetype': p['archetype'],
+            'Engines': p['n_engines'],
+            'Median Life': f"{p['median_lifetime']:.0f} cy",
+            'Min–Max': f"{p['min_lifetime']:.0f}–{p['max_lifetime']:.0f}"
+        }
+        for cid, p in profiles.items()
+    ])
+    st.dataframe(prof_df, use_container_width=True)
+
+
+def show_maintenance_scheduler():
+    """Maintenance Scheduler tab."""
+    st.header("📅 Predictive Maintenance Scheduler")
+    st.markdown(
+        "Generate **optimized maintenance schedules** that respect hangar capacity, "
+        "technician availability, and engine priority."
+    )
+
+    n_engines = st.slider("Fleet Size", 10, 60, 30)
+    n_hangars = st.slider("Hangar Capacity (slots/cycle)", 1, 6, 3)
+    horizon = st.slider("Scheduling Horizon (cycles)", 50, 300, 100)
+
+    fleet = pd.DataFrame({
+        'engine_id': [f'ENG-{i:03d}' for i in range(1, n_engines + 1)],
+        'rul_pred': np.random.randint(5, 150, n_engines).astype(float)
+    })
+
+    scheduler = MaintenanceScheduler(n_hangars=n_hangars, horizon=horizon)
+
+    if st.button("🚀 Generate Schedule"):
+        scheduler.create_jobs_from_fleet(fleet)
+        sched = scheduler.optimize_schedule('priority')
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Jobs Scheduled", sched['scheduled_count'])
+        col2.metric("Total Cost", f"${sched['total_cost']:,.0f}")
+        col3.metric("Total Downtime", f"{sched['total_downtime']} cy")
+        col4.metric("Failures Prevented", sched['failures_prevented'])
+
+        st.plotly_chart(scheduler.plot_gantt("Maintenance Gantt Chart"), use_container_width=True)
+        st.plotly_chart(scheduler.plot_utilization("Hangar Utilization"), use_container_width=True)
+
+        st.markdown("### 🔄 Strategy Comparison")
+        comp = scheduler.compare_strategies(fleet)
+        fig_comp = scheduler.plot_cost_breakdown(comp, "Strategy Cost Comparison")
+        st.plotly_chart(fig_comp, use_container_width=True)
+        st.dataframe(comp, use_container_width=True)
