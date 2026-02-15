@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Health Report — Q1 2026</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0f1c;
+            color: #e0e0e0;
+            padding: 40px;
+            line-height: 1.6;
+        }
+        .container { max-width: 1100px; margin: 0 auto; }
+        .header {
+            background: linear-gradient(135deg, #1a1f36, #2d1b69);
+            border-radius: 16px;
+            padding: 40px;
+            margin-bottom: 30px;
+            border: 1px solid #3d2b7a;
+        }
+        .header h1 {
+            font-size: 2em;
+            background: linear-gradient(135deg, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+        }
+        .header .meta { color: #9ca3af; font-size: 0.9em; }
+        .risk-badge {
+            display: inline-block;
+            padding: 6px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.85em;
+            letter-spacing: 1px;
+            color: white;
+            background: #f39c12;
+            margin-top: 10px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
+        }
+        .card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #60a5fa;
+        }
+        .card .label { color: #9ca3af; margin-top: 5px; font-size: 0.85em; }
+        .section {
+            background: #111827;
+            border: 1px solid #1f2937;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 25px;
+        }
+        .section h2 {
+            font-size: 1.3em;
+            color: #a78bfa;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #1f2937;
+            padding-bottom: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            padding: 10px 15px;
+            text-align: left;
+            border-bottom: 1px solid #1f2937;
+        }
+        th {
+            color: #a78bfa;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        tr:hover { background: #1f2937; }
+        .status-critical { color: #ef4444; font-weight: bold; }
+        .status-warning { color: #f59e0b; }
+        .status-healthy { color: #10b981; }
+        .recommendation {
+            background: #1e1b4b;
+            border-left: 4px solid #a78bfa;
+            padding: 15px 20px;
+            margin-top: 10px;
+            border-radius: 0 8px 8px 0;
+        }
+        .bar {
+            height: 10px;
+            border-radius: 5px;
+            background: #1f2937;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+        .bar-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.5s;
+        }
+        .footer {
+            text-align: center;
+            color: #6b7280;
+            margin-top: 40px;
+            font-size: 0.8em;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="header">
+        <h1>✈️ Fleet Health Report — Q1 2026</h1>
+        <div class="meta">Generated: 2026-02-15 23:55:29 | Engines: 40 | System: Aircraft Engine RUL Prediction</div>
+        <div class="risk-badge">RISK LEVEL: MEDIUM</div>
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="value">40</div>
+            <div class="label">TOTAL ENGINES</div>
+        </div>
+        <div class="card">
+            <div class="value" style="color: #ef4444">8</div>
+            <div class="label">CRITICAL</div>
+        </div>
+        <div class="card">
+            <div class="value" style="color: #f59e0b">12</div>
+            <div class="label">WARNING</div>
+        </div>
+        <div class="card">
+            <div class="value" style="color: #10b981">20</div>
+            <div class="label">HEALTHY</div>
+        </div>
+        <div class="card">
+            <div class="value">57%</div>
+            <div class="label">FLEET HEALTH</div>
+        </div>
+        <div class="card">
+            <div class="value">$520,000</div>
+            <div class="label">EST. MAINTENANCE COST</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>📊 Fleet Statistics</h2>
+        <table>
+            <tr><td>Mean RUL</td><td><strong>85.5 cycles</strong></td></tr>
+            <tr><td>Min RUL</td><td><strong>11.0 cycles</strong></td></tr>
+            <tr><td>Max RUL</td><td><strong>187.0 cycles</strong></td></tr>
+            <tr><td>Std Dev</td><td><strong>53.8 cycles</strong></td></tr>
+            <tr>
+                <td>Health Distribution</td>
+                <td>
+                    <div class="bar" style="width:100%">
+                        <div class="bar-fill" style="width:20%; background:#ef4444; float:left"></div>
+                        <div class="bar-fill" style="width:30%; background:#f59e0b; float:left"></div>
+                        <div class="bar-fill" style="width:50%; background:#10b981; float:left"></div>
+                    </div>
+                </td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>🚨 Critical Engines — Immediate Action Required</h2>
+        <table>
+            <tr><th>Engine ID</th><th>RUL</th><th>Status</th><th>Action</th></tr>
+            <tr>
+                <td>ENG-001</td>
+                <td class="status-critical">11 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-002</td>
+                <td class="status-critical">24 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-003</td>
+                <td class="status-critical">19 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-004</td>
+                <td class="status-critical">15 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-005</td>
+                <td class="status-critical">12 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-006</td>
+                <td class="status-critical">25 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-007</td>
+                <td class="status-critical">11 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+            <tr>
+                <td>ENG-008</td>
+                <td class="status-critical">23 cy</td>
+                <td class="status-critical">CRITICAL</td>
+                <td>Ground immediately — schedule emergency maintenance</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>⚠️ Warning Engines — Schedule Maintenance</h2>
+        <table>
+            <tr><th>Engine ID</th><th>RUL</th><th>Status</th><th>Action</th></tr>
+            <tr>
+                <td>ENG-009</td>
+                <td class="status-warning">52 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 22 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-010</td>
+                <td class="status-warning">40 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 10 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-011</td>
+                <td class="status-warning">40 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 10 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-012</td>
+                <td class="status-warning">53 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 23 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-013</td>
+                <td class="status-warning">65 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 35 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-014</td>
+                <td class="status-warning">69 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 39 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-015</td>
+                <td class="status-warning">53 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 23 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-016</td>
+                <td class="status-warning">32 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 2 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-017</td>
+                <td class="status-warning">51 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 21 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-018</td>
+                <td class="status-warning">31 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 1 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-019</td>
+                <td class="status-warning">53 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 23 cycles</td>
+            </tr>
+            <tr>
+                <td>ENG-020</td>
+                <td class="status-warning">73 cy</td>
+                <td class="status-warning">WARNING</td>
+                <td>Schedule maintenance within 43 cycles</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>📋 Recommendations</h2>
+        <div class="recommendation">
+            <strong>🔴 URGENT</strong> — Ground 8 critical engine(s) immediately. Expected unscheduled cost: $400,000. Failure within <30 cycles is imminent.
+        </div>
+        <div class="recommendation">
+            <strong>🟡 HIGH</strong> — Schedule proactive maintenance for 12 warning engine(s). Estimated cost savings vs unscheduled: $480,000.
+        </div>
+        <div class="recommendation">
+            <strong>🔴 STRATEGIC</strong> — Critical engine fraction exceeds 15% of fleet. Consider fleet-wide inspection campaign and accelerated spare parts procurement.
+        </div>
+        <div class="recommendation">
+            <strong>🟢 ROUTINE</strong> — Continue monitoring 20 healthy engine(s). Next review recommended in 10 cycles.
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>💰 Cost Analysis</h2>
+        <table>
+            <tr><td>Unscheduled maintenance (8 engines)</td>
+                <td><strong>$400,000</strong></td></tr>
+            <tr><td>Scheduled maintenance (12 engines)</td>
+                <td><strong>$120,000</strong></td></tr>
+            <tr><td>Monitoring (20 engines)</td>
+                <td><strong>$10,000</strong></td></tr>
+            <tr style="border-top: 2px solid #a78bfa">
+                <td><strong>Total Estimated Cost</strong></td>
+                <td><strong style="color: #60a5fa">$530,000</strong></td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="footer">
+        <p>Aircraft Engine RUL Prediction System — Automated Report</p>
+        <p>Generated on 2026-02-15 23:55:29</p>
+    </div>
+
+</div>
+</body>
+</html>
