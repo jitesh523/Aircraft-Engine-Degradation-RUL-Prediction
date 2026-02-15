@@ -36,6 +36,9 @@ from whatif_simulator import WhatIfSimulator
 from sensor_network import SensorNetwork
 from degradation_clusterer import DegradationClusterer
 from maintenance_scheduler import MaintenanceScheduler
+from digital_twin import DigitalTwin, HPC_DEGRADATION, FAN_DEGRADATION
+from fleet_risk_simulator import FleetRiskSimulator
+from report_engine import ReportEngine
 
 # Page configuration
 st.set_page_config(
@@ -227,7 +230,9 @@ def main():
          "📉 Survival Analysis", "🛰️ Fleet Ops Center",
          "🔬 Root Cause Analysis", "🔮 What-If Simulator",
          "🗔️ Sensor Network", "🧩 Degradation Clusters",
-         "📅 Maintenance Scheduler"]
+         "📅 Maintenance Scheduler",
+         "🔧 Digital Twin", "⚡ Fleet Risk MC",
+         "📄 Report Generator"]
     )
     
     # Load models
@@ -272,6 +277,12 @@ def main():
         show_degradation_clusters()
     elif mode == "📅 Maintenance Scheduler":
         show_maintenance_scheduler()
+    elif mode == "🔧 Digital Twin":
+        show_digital_twin()
+    elif mode == "⚡ Fleet Risk MC":
+        show_fleet_risk()
+    elif mode == "📄 Report Generator":
+        show_report_generator()
 
 
 def show_quick_prediction(models):
@@ -1406,3 +1417,116 @@ def show_maintenance_scheduler():
         fig_comp = scheduler.plot_cost_breakdown(comp, "Strategy Cost Comparison")
         st.plotly_chart(fig_comp, use_container_width=True)
         st.dataframe(comp, use_container_width=True)
+
+
+def show_digital_twin():
+    """Digital Twin Engine Simulator tab."""
+    st.header("🔧 Digital Twin Engine Simulator")
+    st.markdown("Create a **virtual replica** of an engine to simulate degradation and project remaining life.")
+
+    col1, col2 = st.columns(2)
+    total_life = col1.slider("Engine Total Life (cycles)", 100, 400, 200)
+    profile = col2.selectbox("Degradation Profile", ["HPC Degradation", "Fan Degradation"])
+
+    deg = HPC_DEGRADATION if profile == "HPC Degradation" else FAN_DEGRADATION
+    twin = DigitalTwin(engine_id='TWIN-DASH', total_life=total_life, degradation=deg)
+
+    if st.button("🚀 Run Simulation"):
+        with st.spinner("Simulating engine lifecycle…"):
+            twin.simulate()
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Cycles", total_life)
+        col2.metric("Final Health", f"{twin.health_index[-1]:.2f}")
+        col3.metric("Degradation", profile)
+
+        st.plotly_chart(twin.plot_health_index(), use_container_width=True)
+        st.plotly_chart(twin.plot_sensor_trajectories(), use_container_width=True)
+
+        st.markdown("### 🎯 RUL Projection")
+        cycle = st.slider("Project from cycle", 10, total_life - 10, total_life // 2)
+        proj = twin.project_remaining_life(current_cycle=cycle)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Mean RUL", f"{proj['mean_rul']:.0f} cy")
+        c2.metric("90% CI", f"{proj['ci_lower']:.0f}–{proj['ci_upper']:.0f}")
+        c3.metric("P(fail<30cy)", f"{proj['p_failure_30']:.1%}")
+        st.plotly_chart(twin.plot_rul_projection(proj), use_container_width=True)
+
+
+def show_fleet_risk():
+    """Fleet Risk Monte Carlo tab."""
+    st.header("⚡ Fleet Risk Monte Carlo")
+    st.markdown("Run **10,000 simulations** to assess fleet-wide failure risk, Value-at-Risk, and spare parts needs.")
+
+    col1, col2, col3 = st.columns(3)
+    n_engines = col1.slider("Fleet Size", 10, 80, 40)
+    horizon = col2.slider("Risk Horizon (cycles)", 10, 100, 30)
+    n_sims = col3.selectbox("Simulations", [1000, 5000, 10000], index=2)
+
+    fleet = pd.DataFrame({
+        'engine_id': [f'ENG-{i:03d}' for i in range(1, n_engines + 1)],
+        'rul_pred': np.concatenate([
+            np.random.randint(5, 30, max(1, n_engines // 5)),
+            np.random.randint(30, 80, max(1, n_engines // 3)),
+            np.random.randint(80, 200, n_engines - max(1, n_engines // 5) - max(1, n_engines // 3)),
+        ]).astype(float),
+        'rul_std': np.random.uniform(5, 20, n_engines)
+    })
+
+    if st.button("🎲 Run Monte Carlo"):
+        sim = FleetRiskSimulator(n_simulations=n_sims)
+        sim.setup_fleet(fleet)
+        with st.spinner(f"Running {n_sims:,} simulations…"):
+            results = sim.run_simulation(horizon=horizon)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Mean Failures", f"{results['mean_failures']:.1f}")
+        c2.metric("P(3+ Failures)", f"{results['p_three_plus']:.1%}")
+        c3.metric("VaR 95%", f"${results['var_95']:,.0f}")
+        c4.metric("CVaR 95%", f"${results['cvar_95']:,.0f}")
+
+        st.plotly_chart(sim.plot_risk_dashboard(), use_container_width=True)
+
+        st.markdown("### 📦 Spare Parts Optimization")
+        spares = sim.spare_parts_analysis()
+        st.plotly_chart(sim.plot_spare_parts(spares), use_container_width=True)
+        st.dataframe(spares, use_container_width=True)
+
+
+def show_report_generator():
+    """Automated Report Generator tab."""
+    st.header("📄 Automated Report Generator")
+    st.markdown("Generate a comprehensive **HTML fleet health report** with risk analysis and recommendations.")
+
+    n_engines = st.slider("Fleet Size for Report", 10, 60, 30)
+    report_title = st.text_input("Report Title", "Fleet Health Report — Q1 2026")
+
+    fleet = pd.DataFrame({
+        'engine_id': [f'ENG-{i:03d}' for i in range(1, n_engines + 1)],
+        'rul_pred': np.concatenate([
+            np.random.randint(5, 30, max(1, n_engines // 5)),
+            np.random.randint(30, 80, max(1, n_engines // 3)),
+            np.random.randint(80, 200, n_engines - max(1, n_engines // 5) - max(1, n_engines // 3)),
+        ]).astype(float)
+    })
+
+    if st.button("📝 Generate Report"):
+        engine = ReportEngine()
+        analysis = engine.analyze_fleet(fleet)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Risk Level", analysis['risk_level'])
+        c2.metric("Health Score", f"{analysis['fleet_health_score']:.0f}%")
+        c3.metric("Critical", analysis['n_critical'])
+        c4.metric("Est. Cost", f"${analysis['estimated_cost']:,.0f}")
+
+        report_path = engine.generate_html_report(title=report_title)
+
+        st.success(f"✅ Report generated: `{report_path}`")
+        with open(report_path, 'r') as f:
+            html_content = f.read()
+        st.download_button("📥 Download HTML Report", html_content,
+                          file_name="fleet_report.html", mime="text/html")
+
+        st.markdown("### 📋 Executive Summary")
+        st.text(engine.generate_summary_text())
