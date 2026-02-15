@@ -71,6 +71,11 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 - **Degradation Pattern Clustering** — K-Means trajectory archetypes with PCA & silhouette
 - **Predictive Maintenance Scheduler** — constraint-based fleet scheduling with Gantt charts
 
+### Digital Twin, Fleet Risk & Reporting (Phase 10)
+- **Digital Twin Engine Simulator** — physics-inspired virtual engine with HPC/Fan degradation profiles, synthetic data generation, and Monte Carlo RUL projection
+- **Fleet Risk Monte Carlo** — 10,000-run probabilistic failure simulation with VaR/CVaR, per-engine risk heatmap, and spare parts optimization
+- **Automated Report Generator** — professional dark-themed HTML reports with fleet health scoring, cost analysis, and prioritized recommendations
+
 ---
 
 ## Dashboard (15 Tabs)
