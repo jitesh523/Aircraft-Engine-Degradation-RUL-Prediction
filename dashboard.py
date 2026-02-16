@@ -39,6 +39,9 @@ from maintenance_scheduler import MaintenanceScheduler
 from digital_twin import DigitalTwin, HPC_DEGRADATION, FAN_DEGRADATION
 from fleet_risk_simulator import FleetRiskSimulator
 from report_engine import ReportEngine
+from envelope_analyzer import EnvelopeAnalyzer
+from similarity_finder import SimilarityFinder
+from cost_optimizer import CostOptimizer
 
 # Page configuration
 st.set_page_config(
@@ -232,7 +235,9 @@ def main():
          "🗔️ Sensor Network", "🧩 Degradation Clusters",
          "📅 Maintenance Scheduler",
          "🔧 Digital Twin", "⚡ Fleet Risk MC",
-         "📄 Report Generator"]
+         "📄 Report Generator",
+         "📐 Envelope Analyzer", "🔎 Engine Similarity",
+         "💰 Cost Optimizer"]
     )
     
     # Load models
@@ -283,6 +288,12 @@ def main():
         show_fleet_risk()
     elif mode == "📄 Report Generator":
         show_report_generator()
+    elif mode == "📐 Envelope Analyzer":
+        show_envelope_analyzer()
+    elif mode == "🔎 Engine Similarity":
+        show_engine_similarity()
+    elif mode == "💰 Cost Optimizer":
+        show_cost_optimizer()
 
 
 def show_quick_prediction(models):
@@ -1530,3 +1541,120 @@ def show_report_generator():
 
         st.markdown("### 📋 Executive Summary")
         st.text(engine.generate_summary_text())
+
+
+def show_envelope_analyzer():
+    """Operational Envelope Analyzer tab."""
+    st.header("📐 Operational Envelope Analyzer")
+    st.markdown("Detect **safe operating boundaries** and score engines for envelope violations.")
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+    except Exception as e:
+        st.error(f"Data load error: {e}")
+        return
+
+    method = st.selectbox("Boundary Method", ['percentile', 'iqr'])
+    analyzer = EnvelopeAnalyzer(method=method)
+
+    if st.button("🔍 Analyze Envelope"):
+        with st.spinner("Learning envelope from healthy data…"):
+            analyzer.learn_envelope(train_df, rul_threshold=120)
+            summary = analyzer.fleet_violation_summary(train_df)
+
+        st.markdown("### Fleet Violation Summary")
+        st.dataframe(summary.head(20), use_container_width=True)
+
+        engine_id = st.selectbox("Select Engine for Detail", summary['engine_id'].head(10))
+        eng_data = train_df[train_df['unit_id'] == engine_id].sort_values('time_cycles')
+        onset = analyzer.detect_degradation_onset(eng_data)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Onset Cycle", onset['onset_cycle'] or "N/A")
+        c2.metric("Max Violation", f"{onset['max_violation']:.3f}")
+        c3.metric("Remaining", onset['remaining_after_onset'] or "N/A")
+
+        st.plotly_chart(analyzer.plot_violation_timeline(eng_data, onset), use_container_width=True)
+        st.plotly_chart(analyzer.plot_envelope_radar(eng_data.iloc[-1]), use_container_width=True)
+
+
+def show_engine_similarity():
+    """Engine Similarity Finder tab."""
+    st.header("🔎 Engine Similarity Finder")
+    st.markdown("Find **historically similar engines** using DTW trajectory matching for transfer prognosis.")
+
+    try:
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+    except Exception as e:
+        st.error(f"Data load error: {e}")
+        return
+
+    n_sensors = st.slider("Sensors for DTW", 2, 8, 4)
+    max_engines = st.slider("Fleet Size", 10, 50, 20)
+    finder = SimilarityFinder(n_sensors=n_sensors, max_engines=max_engines)
+
+    if st.button("🔎 Find Similar Engines"):
+        with st.spinner("Building profiles and computing DTW distances…"):
+            finder.build_fleet_profiles(train_df)
+            query_id = list(finder.fleet_profiles.keys())[0]
+            similar = finder.find_similar(query_id, k=5)
+            prognosis = finder.transfer_prognosis(query_id, k=5)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Predicted RUL", f"{prognosis['predicted_rul']:.0f} cy")
+        c2.metric("Actual RUL", f"{prognosis['query_actual_rul']} cy")
+        c3.metric("Error", f"{prognosis['rul_error']:.0f} cy")
+
+        st.plotly_chart(finder.plot_trajectory_overlay(query_id, similar), use_container_width=True)
+        st.plotly_chart(finder.plot_prognosis_comparison(prognosis), use_container_width=True)
+
+        st.markdown("### 🗺️ Similarity Heatmap")
+        with st.spinner("Computing similarity matrix…"):
+            finder.compute_similarity_matrix()
+        st.plotly_chart(finder.plot_similarity_heatmap(), use_container_width=True)
+
+
+def show_cost_optimizer():
+    """Maintenance Cost Optimizer tab."""
+    st.header("💰 Maintenance Cost Optimizer")
+    st.markdown("**Multi-objective Pareto optimization** balancing cost, risk, and fleet availability.")
+
+    col1, col2, col3 = st.columns(3)
+    budget = col1.number_input("Budget Cap ($)", 50000, 2000000, 300000, step=50000)
+    capacity = col2.slider("Hangar Capacity", 1, 15, 5)
+    n_engines = col3.slider("Fleet Size", 10, 50, 30)
+
+    fleet = pd.DataFrame({
+        'engine_id': [f'ENG-{i:03d}' for i in range(1, n_engines + 1)],
+        'rul_pred': np.concatenate([
+            np.random.randint(5, 25, max(1, n_engines // 5)),
+            np.random.randint(25, 70, max(1, n_engines // 3)),
+            np.random.randint(70, 200, n_engines - max(1, n_engines // 5) - max(1, n_engines // 3)),
+        ]).astype(float)
+    })
+
+    if st.button("🎯 Optimize"):
+        optimizer = CostOptimizer(budget_cap=budget, hangar_capacity=capacity)
+        with st.spinner("Generating and evaluating solutions…"):
+            optimizer.generate_solutions(fleet, n_solutions=300)
+            optimizer.find_pareto_front()
+
+        preference = st.selectbox("Preference", ['balanced', 'cost', 'safety', 'availability'])
+        rec = optimizer.recommend_solution(preference)
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Maintenance Cost", f"${rec['total_cost']:,.0f}")
+        c2.metric("Risk Cost", f"${rec['risk_cost']:,.0f}")
+        c3.metric("Availability", f"{rec['availability']:.0%}")
+        c4.metric("Engines Maintained", rec['n_maintained'])
+
+        st.plotly_chart(optimizer.plot_pareto_front(), use_container_width=True)
+        st.plotly_chart(optimizer.plot_recommendation(rec, fleet), use_container_width=True)

@@ -76,6 +76,11 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 - **Fleet Risk Monte Carlo** — 10,000-run probabilistic failure simulation with VaR/CVaR, per-engine risk heatmap, and spare parts optimization
 - **Automated Report Generator** — professional dark-themed HTML reports with fleet health scoring, cost analysis, and prioritized recommendations
 
+### Envelope Analysis, Similarity Search & Cost Optimization (Phase 11)
+- **Operational Envelope Analyzer** — statistical boundary learning (percentile/IQR) with violation scoring, degradation onset detection, and radar chart visualization
+- **Engine Similarity Finder** — DTW-based trajectory matching across fleet history, k-nearest neighbor transfer prognosis, and pairwise similarity heatmap
+- **Maintenance Cost Optimizer** — multi-objective Pareto optimization (cost vs risk vs availability) with budget constraints and sensitivity analysis
+
 ---
 
 ## Dashboard (15 Tabs)
