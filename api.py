@@ -1132,9 +1132,6 @@ class FeedbackCollector:
         return '\n'.join(lines)
 
 
-        return '\n'.join(lines)
-
-
 class APIRateLimiter:
     """
     Rate limiter for API endpoints
