@@ -4,7 +4,7 @@ Provides HTTP endpoints for making predictions and getting model info
 """
 
 from fastapi import FastAPI, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 import numpy as np
@@ -37,11 +37,17 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+
+@app.get("/", include_in_schema=False)
+def root_redirect():
+    """Redirect API root to interactive Swagger documentation."""
+    return RedirectResponse(url="/docs")
+
+
 # Global model storage
 models = {}
 preprocessor = None
 feature_engineer = None
-ensemble = None
 ensemble = None
 planner = None
 uncertainty_quantifier = None
