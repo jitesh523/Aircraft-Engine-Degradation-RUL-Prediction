@@ -9,13 +9,13 @@
 ![Security](https://img.shields.io/badge/Security-Bandit%20%7C%20CodeQL-brightgreen.svg)
 ![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)
 ![Dashboard](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B.svg)
-![Modules](https://img.shields.io/badge/Modules-42-blueviolet.svg)
+![Modules](https://img.shields.io/badge/Modules-48-blueviolet.svg)
 
 ---
 
 ## Overview
 
-This project implements a comprehensive Remaining Useful Life (RUL) prediction system for aircraft turbofan engines using the NASA Commercial Modular Aero-Propulsion System Simulation (C-MAPSS) dataset. The system spans **9 development phases** — from deep learning (LSTM/Transformer) and gradient boosting ensembles to causal inference, reinforcement learning, federated learning, and interactive fleet management — all unified in a **15-tab Streamlit dashboard**.
+This project implements a comprehensive Remaining Useful Life (RUL) prediction system for aircraft turbofan engines using the NASA Commercial Modular Aero-Propulsion System Simulation (C-MAPSS) dataset. The system spans **11 development phases** — from deep learning (LSTM/Transformer) and gradient boosting ensembles to causal inference, reinforcement learning, federated learning, and interactive fleet management — all unified in a **21-tab Streamlit dashboard**.
 
 ---
 
@@ -83,7 +83,7 @@ This project implements a comprehensive Remaining Useful Life (RUL) prediction s
 
 ---
 
-## Dashboard (15 Tabs)
+## Dashboard (21 Tabs)
 
 The Streamlit dashboard provides a unified interface for all features:
 
@@ -101,9 +101,15 @@ The Streamlit dashboard provides a unified interface for all features:
 | 10 | 🛰️ Fleet Ops Center | Live health heatmap, geo-map, alerts, maintenance queue |
 | 11 | 🔬 Root Cause Analysis | Sensor deviation radar, failure mode pattern matching |
 | 12 | 🔮 What-If Simulator | Delayed maintenance projection, fleet strategy comparison |
-| 13 | 🗔️ Sensor Network | Interactive correlation graph, heatmap, communities |
+| 13 | 🕸️ Sensor Network | Interactive correlation graph, heatmap, communities |
 | 14 | 🧩 Degradation Clusters | PCA scatter, lifetime box plots, archetype profiles |
 | 15 | 📅 Maintenance Scheduler | Gantt chart, hangar utilization, strategy comparison |
+| 16 | 🏭 Digital Twin | Physics-inspired engine simulation, health index tracking |
+| 17 | 🎲 Fleet Risk MC | Monte Carlo failure probability, VaR/CVaR analysis |
+| 18 | 📄 Report Generator | Professional HTML reports with cost analysis |
+| 19 | 📐 Envelope Analyzer | Operating boundary learning, violation scoring, radar chart |
+| 20 | 🔗 Engine Similarity | DTW trajectory matching, transfer prognosis |
+| 21 | 💰 Cost Optimizer | Pareto cost/risk/availability optimization |
 
 ```bash
 # Launch the dashboard
@@ -230,7 +236,15 @@ Aircraft-Engine-Degradation-RUL-Prediction/
 ├── sensor_network.py            # Sensor correlation network (Phase 9)
 ├── degradation_clusterer.py     # Degradation pattern clustering (Phase 9)
 │
-├── dashboard.py                 # 15-tab Streamlit dashboard
+├── digital_twin.py              # Physics-inspired engine simulator (Phase 10)
+├── fleet_risk_simulator.py      # Monte Carlo fleet risk analysis (Phase 10)
+├── report_engine.py             # Automated HTML report generator (Phase 10)
+│
+├── envelope_analyzer.py         # Operational envelope analyzer (Phase 11)
+├── similarity_finder.py         # DTW engine similarity finder (Phase 11)
+├── cost_optimizer.py            # Pareto maintenance cost optimizer (Phase 11)
+│
+├── dashboard.py                 # 21-tab Streamlit dashboard
 ├── api.py                       # FastAPI REST API
 ├── optimize_hyperparams.py      # Hyperparameter optimization script
 │
@@ -241,7 +255,7 @@ Aircraft-Engine-Degradation-RUL-Prediction/
 ├── requirements-dev.txt         # Development dependencies
 │
 ├── .github/workflows/           # CI/CD pipeline (GitHub Actions)
-├── tests/                       # Unit & integration tests
+├── tests/                       # Unit & integration tests (14 test files)
 ├── models/saved/                # Trained model files
 ├── results/                     # Evaluation results
 ├── plots/                       # Generated visualizations
