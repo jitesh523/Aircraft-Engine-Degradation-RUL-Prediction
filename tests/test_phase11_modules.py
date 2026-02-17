@@ -19,32 +19,7 @@ from similarity_finder import SimilarityFinder, fast_dtw_distance
 from cost_optimizer import CostOptimizer
 from envelope_analyzer import EnvelopeAnalyzer
 
-
-# ============================================================
-# Shared fixtures
-# ============================================================
-
-@pytest.fixture
-def synthetic_fleet():
-    """Generate synthetic C-MAPSS-shaped data for testing."""
-    np.random.seed(42)
-    rows = []
-    for uid in range(1, 11):
-        n_cycles = np.random.randint(120, 200)
-        for t in range(1, n_cycles + 1):
-            row = {
-                'unit_id': uid,
-                'time_cycles': t,
-                'RUL': n_cycles - t,
-            }
-            # Generate 21 sensors with slight degradation trend
-            for s in range(1, 22):
-                base = 100 + s * 10
-                noise = np.random.normal(0, 1)
-                trend = t * 0.01 * s  # degradation
-                row[f'sensor_{s}'] = base + trend + noise
-            rows.append(row)
-    return pd.DataFrame(rows)
+# synthetic_fleet fixture is provided by conftest.py
 
 
 # ============================================================
