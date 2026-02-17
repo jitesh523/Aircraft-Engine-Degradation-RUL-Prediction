@@ -251,6 +251,17 @@ def main():
         else:
             st.error("❌ Models Not Loaded")
             st.stop()
+
+    # Sidebar footer
+    with st.sidebar:
+        st.markdown("---")
+        st.caption(
+            "✈️ **RUL Prediction System** v2.0  \n"
+            "📦 48 modules · 21 tabs  \n"
+            f"🐍 Python {sys.version.split()[0]}  \n"
+            "© 2026 Aircraft Engine Analytics"
+        )
+
     
     if mode == "📊 Quick Prediction":
         show_quick_prediction(models)
