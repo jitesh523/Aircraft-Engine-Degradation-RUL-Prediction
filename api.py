@@ -1244,8 +1244,165 @@ class APIRateLimiter:
         return RateLimitMiddleware
 
 
+# ============================================================
+# Phase 11 API Endpoints
+# ============================================================
+
+class EnvelopeRequest(BaseModel):
+    """Request for envelope analysis."""
+    sensor_data: List[Dict] = Field(..., description="List of sensor readings dicts")
+    rul_threshold: int = Field(120, description="RUL threshold for healthy cycles")
+    method: str = Field("percentile", description="Boundary method: 'percentile' or 'iqr'")
+
+
+class SimilarityRequest(BaseModel):
+    """Request for engine similarity search."""
+    query_engine_id: int = Field(..., description="Engine ID to find matches for")
+    k: int = Field(5, description="Number of similar engines to return")
+    n_sensors: int = Field(6, description="Number of top sensors to use")
+
+
+class CostOptimizeRequest(BaseModel):
+    """Request for cost optimization."""
+    fleet_data: List[Dict] = Field(..., description="Fleet data with engine_id and rul_pred")
+    budget_cap: float = Field(500000, description="Maximum maintenance budget ($)")
+    hangar_capacity: int = Field(5, description="Max engines in maintenance simultaneously")
+    preference: str = Field("balanced", description="Optimization preference: cost/safety/balanced/availability")
+
+
+@app.post("/analyze/envelope", tags=["Phase 11"])
+async def analyze_envelope(request: EnvelopeRequest):
+    """
+    Score sensor data for operating envelope violations.
+
+    Learns safe operating boundaries from healthy engine data and
+    identifies cycles where sensors exceed those boundaries.
+    """
+    try:
+        from envelope_analyzer import EnvelopeAnalyzer
+
+        df = pd.DataFrame(request.sensor_data)
+        analyzer = EnvelopeAnalyzer(method=request.method)
+
+        if 'RUL' not in df.columns and 'rul_pred' not in df.columns:
+            raise HTTPException(
+                status_code=400,
+                detail="Data must contain 'RUL' or 'rul_pred' column"
+            )
+
+        analyzer.learn_envelope(df, rul_threshold=request.rul_threshold)
+        scored = analyzer.score_violations(df)
+
+        n_violated = int((scored['violation_score'] > 0).sum())
+        max_violation = float(scored['violation_score'].max())
+        mean_violation = float(scored['violation_score'].mean())
+
+        return {
+            "status": "success",
+            "sensors_analyzed": len(analyzer.envelopes),
+            "total_cycles": len(df),
+            "cycles_with_violations": n_violated,
+            "violation_rate": round(n_violated / len(df) * 100, 2),
+            "max_violation_score": round(max_violation, 4),
+            "mean_violation_score": round(mean_violation, 4),
+            "envelope_boundaries": {
+                s: {"lower": round(e.lower_bound, 2), "upper": round(e.upper_bound, 2)}
+                for s, e in analyzer.envelopes.items()
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analyze/similarity", tags=["Phase 11"])
+async def analyze_similarity(request: SimilarityRequest):
+    """
+    Find engines with similar degradation trajectories using DTW.
+
+    Returns the k most similar engines and a transfer prognosis
+    (RUL prediction based on similar engines' outcomes).
+    """
+    try:
+        from similarity_finder import SimilarityFinder
+        from data_loader import CMAPSSDataLoader
+        from utils import add_remaining_useful_life
+
+        loader = CMAPSSDataLoader('FD001')
+        train_df, _, _ = loader.load_all_data()
+        train_df = add_remaining_useful_life(train_df)
+
+        finder = SimilarityFinder(n_sensors=request.n_sensors)
+        finder.build_fleet_profiles(train_df)
+
+        similar = finder.find_similar(request.query_engine_id, k=request.k)
+        prognosis = finder.transfer_prognosis(request.query_engine_id, k=request.k)
+
+        return {
+            "status": "success",
+            "query_engine": request.query_engine_id,
+            "similar_engines": [
+                {
+                    "engine_id": int(s['engine_id']),
+                    "distance": round(float(s['distance']), 4),
+                    "actual_rul": int(s.get('actual_rul', 0))
+                }
+                for s in similar
+            ],
+            "transfer_prognosis": {
+                "predicted_rul": round(float(prognosis['predicted_rul']), 1),
+                "confidence": prognosis.get('confidence', 'N/A'),
+                "based_on_k": request.k
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/optimize/cost", tags=["Phase 11"])
+async def optimize_cost(request: CostOptimizeRequest):
+    """
+    Run Pareto multi-objective cost optimization on fleet data.
+
+    Balances maintenance cost, failure risk, and fleet availability
+    under budget and capacity constraints.
+    """
+    try:
+        from cost_optimizer import CostOptimizer
+
+        fleet_df = pd.DataFrame(request.fleet_data)
+        optimizer = CostOptimizer(
+            budget_cap=request.budget_cap,
+            hangar_capacity=request.hangar_capacity
+        )
+
+        optimizer.generate_solutions(fleet_df, n_solutions=300)
+        pareto = optimizer.find_pareto_front()
+        recommendation = optimizer.recommend_solution(request.preference)
+
+        return {
+            "status": "success",
+            "total_solutions": len(optimizer.all_solutions),
+            "feasible_solutions": int(optimizer.all_solutions['within_budget'].sum()),
+            "pareto_optimal": len(pareto),
+            "recommendation": {
+                "preference": recommendation['preference'],
+                "total_cost": round(recommendation['total_cost'], 2),
+                "risk_cost": round(recommendation['risk_cost'], 2),
+                "combined_cost": round(recommendation['combined_cost'], 2),
+                "availability": round(recommendation['availability'], 4),
+                "engines_maintained": recommendation['n_maintained'],
+                "safety_violations": recommendation['safety_violations']
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
-    
+
     logger.info("Starting RUL Prediction API server...")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+
