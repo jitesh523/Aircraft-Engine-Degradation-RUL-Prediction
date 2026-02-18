@@ -8,14 +8,15 @@
 # Install dependencies
 pip install -r requirements.txt
 
-# Start API server
-python api.py
+# Start API server (option 1)
+make run-api
 
-# Or with uvicorn directly
+# Start API server (option 2)
 uvicorn api:app --reload --host 0.0.0.0 --port 8000
 ```
 
 API will be available at:
+- **Root** → redirects to Swagger UI
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 - **Health Check**: http://localhost:8000/health
@@ -35,8 +36,13 @@ docker-compose up -d
 
 ## API Endpoints
 
-### GET /health
-Check API health status
+### Core Endpoints
+
+#### GET /
+Redirects to `/docs` (Swagger UI).
+
+#### GET /health
+Check API health status.
 
 **Response**:
 ```json
@@ -48,8 +54,8 @@ Check API health status
 }
 ```
 
-### POST /predict
-Predict RUL for one or more engines
+#### POST /predict
+Predict RUL for one or more engines.
 
 **Request**:
 ```json
@@ -64,10 +70,8 @@ Predict RUL for one or more engines
           "setting_2": 0.0003,
           "setting_3": 100.0,
           "sensor_2": 642.3,
-          "sensor_3": 1589.7,
-          ...
-        },
-        // ... at least 30 timesteps
+          "sensor_3": 1589.7
+        }
       ]
     }
   ],
@@ -94,30 +98,51 @@ Predict RUL for one or more engines
 }
 ```
 
-### GET /models/info
-Get information about loaded models
+#### GET /models/info
+Get information about loaded models.
+
+### Phase 11 Endpoints
+
+#### POST /analyze/similarity
+Find engines with similar degradation trajectories using DTW.
+
+**Request**:
+```json
+{
+  "engine_id": 42,
+  "top_k": 5
+}
+```
 
 **Response**:
 ```json
 {
-  "lstm": {
-    "architecture": "2-layer LSTM with dropout",
-    "sequence_length": 30,
-    "num_features": 123,
-    "units": [100, 50]
-  },
-  "ensemble": {
-    "strategy": "weighted_average",
-    "weights": {
-      "LSTM": 0.65,
-      "Random Forest": 0.25,
-      "Linear Regression": 0.10
-    }
-  },
-  "maintenance_thresholds": {
-    "critical": 30,
-    "warning": 80,
-    "healthy": 80
+  "query_engine": 42,
+  "similar_engines": [
+    {"engine_id": 17, "similarity": 0.92},
+    {"engine_id": 33, "similarity": 0.88}
+  ]
+}
+```
+
+#### POST /optimize/cost
+Run Pareto multi-objective cost optimization on fleet data.
+
+**Request**:
+```json
+{
+  "preference": "balanced"
+}
+```
+
+**Response**:
+```json
+{
+  "recommendation": {
+    "total_cost": 125000.0,
+    "risk_cost": 45000.0,
+    "combined_cost": 170000.0,
+    "preference": "balanced"
   }
 }
 ```
@@ -141,7 +166,6 @@ engine_data = {
                 "setting_3": 100.0,
                 "sensor_2": 642.3,
                 "sensor_3": 1589.7,
-                # ... all required sensors
             }
             for i in range(1, 31)  # 30 timesteps
         ]
@@ -184,10 +208,9 @@ Dropped sensors (1, 5, 10, 16, 18, 19) are automatically set to 0.
 ### Environment Variables
 
 ```bash
-# Optional configuration
-export MODEL_DIR=/path/to/models
-export RESULTS_DIR=/path/to/results
-export LOG_LEVEL=info
+export CMAPSS_DATA_DIR=/path/to/data     # Dataset location
+export GEMINI_API_KEY=your-key           # For AI assistant
+export LOG_LEVEL=info                     # Logging level
 ```
 
 ### Docker Deployment
@@ -215,19 +238,3 @@ docker-compose down
 - **Prediction latency**: ~100ms per engine (LSTM)
 - **Throughput**: ~10 requests/second (single instance)
 - **Model loading time**: ~5 seconds on startup
-
-## Troubleshooting
-
-**Models not loading:**
-- Ensure models are trained and saved in `models/saved/`
-- Check file paths in `config.py`
-- View logs for detailed error messages
-
-**Insufficient time steps error:**
-- Provide at least 30 timesteps of sensor data
-- LSTM requires sequence_length timesteps for prediction
-
-**High latency:**
-- Consider batch prediction for multiple engines
-- Use ensemble=false for faster LSTM-only predictions
-- Scale horizontally with multiple API instances
