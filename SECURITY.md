@@ -4,7 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.x     | :white_check_mark: |
+| 2.x     | :white_check_mark: |
+| 1.x     | :warning: Security fixes only |
 
 ## Reporting a Vulnerability
 
@@ -30,11 +31,13 @@ We take security seriously. If you discover a security vulnerability, please fol
 ### Scope
 
 This security policy applies to:
-- All Python source code
-- API endpoints (`api.py`)
-- Configuration files
-- Docker configurations
-- CI/CD pipelines
+- All Python source code (48 modules)
+- API endpoints (`api.py`) — including Phase 11 endpoints
+- Configuration files (`config.py`, environment variables)
+- Docker configurations (`Dockerfile`, `docker-compose.yml`)
+- CI/CD pipelines (`.github/workflows/`)
+- Dashboard (`dashboard.py`) — 21-tab Streamlit interface
+- LLM integration (`llm_assistant.py`) — Gemini API key handling
 
 ### Out of Scope
 
@@ -46,11 +49,12 @@ This security policy applies to:
 
 When contributing to this project:
 
-1. **Never commit secrets** - Use environment variables
-2. **Validate inputs** - Especially in API endpoints
-3. **Keep dependencies updated** - Run `pip install --upgrade`
-4. **Use type hints** - Helps catch errors early
-5. **Run security scans** - `bandit -r . -x ./venv`
+1. **Never commit secrets** — Use environment variables (`GEMINI_API_KEY`, `CMAPSS_DATA_DIR`)
+2. **Validate inputs** — Especially in API endpoints and dashboard forms
+3. **Keep dependencies updated** — Run `pip install --upgrade`
+4. **Use type hints** — Helps catch errors early
+5. **Run security scans** — `make security-scan` or `bandit -r . -x ./venv,./tests`
+6. **Avoid hardcoded paths** — Use `os.path` or env vars for portability
 
 ## Acknowledgments
 
