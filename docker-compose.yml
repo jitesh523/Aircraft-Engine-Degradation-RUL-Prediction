@@ -1,6 +1,4 @@
 # Docker Compose for RUL Prediction API
-version: '3.8'
-
 services:
   api:
     build: .
@@ -14,6 +12,8 @@ services:
       - ./logs:/app/logs
     environment:
       - PYTHONUNBUFFERED=1
+      - CMAPSS_DATA_DIR=${CMAPSS_DATA_DIR:-/app/data}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
