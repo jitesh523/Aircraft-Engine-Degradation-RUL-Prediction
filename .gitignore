@@ -46,3 +46,17 @@ CMAPSSData/
 htmlcov/
 coverage.xml
 tests/__pycache__/
+
+# MLflow
+mlruns/
+
+# Reports
+reports/*.html
+
+# Model exports
+*.tflite
+*.onnx
+
+# Environment
+.env
+.env.local
