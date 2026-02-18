@@ -6,7 +6,7 @@ Contains dataset paths, model hyperparameters, and system settings
 import os
 
 # ==================== Dataset Configuration ====================
-DATA_DIR = "/Users/neha/Downloads/CMAPSSData"
+DATA_DIR = os.environ.get('CMAPSS_DATA_DIR', os.path.join(os.path.expanduser('~'), 'Downloads', 'CMAPSSData'))
 
 # Dataset files
 DATASETS = {
@@ -286,7 +286,7 @@ TRADITIONAL_MAINTENANCE_INTERVAL = 150  # Fixed interval in cycles
 
 # ==================== Output Configuration ====================
 # Directories for saving models and results
-PROJECT_ROOT = "/Users/neha/Aircraft-Engine-Degradation-RUL-Prediction"
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(PROJECT_ROOT, 'models', 'saved')
 RESULTS_DIR = os.path.join(PROJECT_ROOT, 'results')
 PLOTS_DIR = os.path.join(PROJECT_ROOT, 'plots')
@@ -542,8 +542,3 @@ class ConfigurationManager:
         lines.append("=" * 60)
         
         return '\n'.join(lines)
-
-
-print(f"Configuration loaded. Project root: {PROJECT_ROOT}")
-print(f"Dataset directory: {DATA_DIR}")
-
