@@ -2,17 +2,17 @@
 
 ## Model Details
 
-- **Name**: Hybrid LSTM Engine RUL Predictor
-- **Version**: 1.0.0
-- **Date**: January 2026
-- **Type**: Deep Learning / Time Series Regression
-- **Framework**: TensorFlow/Keras & Scikit-learn
-- **Architecture**: LSTM (Long Short-Term Memory) Network with dropout regularization
+- **Name**: Hybrid Ensemble Engine RUL Predictor
+- **Version**: 2.0.0
+- **Date**: February 2026
+- **Type**: Deep Learning / Ensemble / Time Series Regression
+- **Framework**: TensorFlow/Keras, Scikit-learn, XGBoost, LightGBM
+- **Architecture**: LSTM + Transformer + Gradient Boosting Ensemble with stacking
 
 ## Intended Use
 
 ### Primary Use Case
-Predicting Remaining Useful Life (RUL) of aircraft turbofan engines based on sensor reading history. This enables predictive maintenance strategies that optimize fleet availability and reduce costs.
+Predicting Remaining Useful Life (RUL) of aircraft turbofan engines based on sensor reading history. Enables predictive maintenance strategies that optimize fleet availability and reduce costs.
 
 ### Users
 - Maintenance engineers
@@ -44,12 +44,22 @@ NASA Commercial Modular Aero-Propulsion System Simulation (C-MAPSS) Dataset.
 - Remaining Useful Life (RUL) in flight cycles.
 - RUL is clipped at 125 cycles (piece-wise linear degradation assumption).
 
+## Model Architecture (v2.0)
+
+| Component | Description |
+|-----------|-------------|
+| LSTM | 2-layer LSTM with dropout regularization |
+| Transformer | Multi-head attention encoder for temporal patterns |
+| XGBoost | Gradient-boosted trees for tabular features |
+| LightGBM | Light gradient-boosted trees for fast inference |
+| Stacking Ensemble | Meta-learner combining all base models |
+
 ## Performance Metrics
 
 Performance evaluated on FD001 test set (partial trajectories):
 
-| Metric | Descriptions | Target Value |
-|--------|--------------|--------------|
+| Metric | Description | Target Value |
+|--------|-------------|--------------|
 | RMSE | Root Mean Squared Error (cycles) | ≤ 25 |
 | MAE | Mean Absolute Error (cycles) | ≤ 20 |
 | R² | Coefficient of Determination | ≥ 0.7 |
@@ -57,35 +67,34 @@ Performance evaluated on FD001 test set (partial trajectories):
 
 The asymmetric score penalizes late predictions (estimating higher RUL than truth) more heavily than early predictions, as missing a failure is costlier/riskier than premature maintenance.
 
-## Model Robustness
+## Advanced Features (v2.0)
 
-### Uncertainty Quantification
-The model uses Monte Carlo Dropout at inference time to estimate prediction uncertainty (confidence intervals).
-- **High uncertainty**: Indicates novel operating conditions or data drift
-- **Low uncertainty**: High confidence in prediction
-
-### Data Validation
-Input data is validated for:
-- Schema correctness
-- Sensor range outliers
-- Missing inputs
+- **Uncertainty Quantification**: Monte Carlo Dropout confidence intervals
+- **Survival Analysis**: Kaplan-Meier and Cox Proportional Hazards
+- **Digital Twin Simulation**: Engine degradation simulation
+- **Operational Envelope Analysis**: Operating limits monitoring
+- **Engine Similarity Search**: DTW-based fleet matching
+- **Fleet Risk Assessment**: Monte Carlo failure simulation
+- **Cost Optimization**: Pareto multi-objective maintenance scheduling
+- **Drift Detection**: PSI/KS-based model monitoring
 
 ## Limitations
 
 1. **Simulated Data**: Trained on simulated data which may not capture all complexities of real-world engines.
 2. **Fixed Failure Modes**: Can only predict degradation patterns seen during training.
 3. **Data Drift**: Performance may degrade if engine operating profile changes significantly over time.
-4. **Assumption of Smooth Degradation**: Assumes somewhat gradual degradation; sudden catastrophic failures due to external factors are not modeled.
+4. **Assumption of Smooth Degradation**: Assumes gradual degradation; sudden catastrophic failures are not modeled.
 
 ## Ethical Considerations
 
 - **Safety**: Predictions are advisory. Critical maintenance decisions should always be verified by certified personnel.
-- **Bias**: The model performs consistently across the specific simulated engine fleet, but applying it to real engines requires careful validation to avoid bias against specific engine vintages or operating environments.
+- **Bias**: The model performs consistently across the simulated engine fleet, but applying it to real engines requires careful validation.
 
 ## Maintenance & Monitoring
 
-The system includes a Drift Monitor to detect:
-- **Feature Drift**: Changes in sensor distributions using PSI/KS tests.
-- **Performance Drift**: Degradation in accuracy if ground truth becomes available.
+The system includes:
+- **Feature Drift**: PSI/KS tests with configurable sensitivity
+- **Concept Drift**: Target distribution and covariate shift detection
+- **Performance Monitoring**: RMSE degradation tracking
 
 Retraining is recommended if PSI > 0.2 for key sensors or if RMSE increases by >10%.
