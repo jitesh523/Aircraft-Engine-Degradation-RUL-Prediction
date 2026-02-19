@@ -61,6 +61,24 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to maintain a w
    pytest tests/ -v
    ```
 
+### Makefile Shortcuts
+
+```bash
+make setup           # Install all dependencies
+make test            # Run tests with timeout
+make test-cov        # Run tests with coverage report
+make test-quick      # Quick test run (fail-fast)
+make lint            # Run flake8 + black + pylint
+make format          # Auto-format with black
+make run-api         # Start FastAPI server
+make run-dashboard   # Start Streamlit dashboard
+make security-scan   # Run bandit security scan
+make check           # Run lint + test together
+make clean           # Remove build artifacts
+make docker-build    # Build Docker image
+make docker-up       # Start with docker-compose
+```
+
 ## How to Contribute
 
 ### Reporting Bugs
