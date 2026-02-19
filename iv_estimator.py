@@ -205,9 +205,9 @@ class IVEstimator:
 
 if __name__ == "__main__":
     # Test with synthetic data
-    print("Generating synthetic data...")
-    print("True Causal Model: Y = 2*X + U + e")
-    print("Confounding: X correlated with U")
+    logger.info("Generating synthetic data...")
+    logger.info("True Causal Model: Y = 2*X + U + e")
+    logger.info("Confounding: X correlated with U")
     
     np.random.seed(42)
     n = 1000
@@ -219,27 +219,26 @@ if __name__ == "__main__":
     Z = np.random.normal(0, 1, n)
     
     # Treatment (endogenous: depends on Z and U)
-    # X = 0.8*Z + 0.5*U + noise
     X = 0.8 * Z + 0.5 * U + np.random.normal(0, 0.5, n)
     
     # Outcome
-    # Y = 2*X + U + noise
     Y = 2 * X + U + np.random.normal(0, 0.5, n)
     
     df = pd.DataFrame({'Y': Y, 'X': X, 'Z': Z, 'U': U})
     
     estimator = IVEstimator()
     
-    print("\n--- Running IV Estimation ---")
+    logger.info("Running IV Estimation...")
     results = estimator.estimate_effect(df, 'Y', 'X', 'Z')
     
-    print("\nEstimation Results:")
+    logger.info("Estimation Results:")
     for k, v in results.items():
-        print(f"  {k}: {v}")
+        logger.info(f"  {k}: {v}")
         
-    print(f"\nTrue Effect: 2.0")
-    print(f"Estimated IV Effect: {results['effect_size']:.4f}")
+    logger.info(f"True Effect: 2.0")
+    logger.info(f"Estimated IV Effect: {results['effect_size']:.4f}")
     
     # Naive OLS for comparison
     ols = sm.OLS(Y, sm.add_constant(X)).fit()
-    print(f"Naive OLS Effect: {ols.params['X']:.4f} (Biased due to U)")
+    logger.info(f"Naive OLS Effect: {ols.params['X']:.4f} (Biased due to U)")
+

@@ -180,7 +180,7 @@ class PowerCalculator:
 
 if __name__ == "__main__":
     # Test calculator
-    print("--- Power Calculator Test ---")
+    logger.info("--- Power Calculator Test ---")
     
     calc = PowerCalculator()
     
@@ -190,15 +190,16 @@ if __name__ == "__main__":
     power = 0.8
     
     n_req = calc.calculate_sample_size(d, alpha, power)
-    print(f"Required sample size for d={d}, alpha={alpha}, power={power}: {n_req} per group")
+    logger.info(f"Required sample size for d={d}, alpha={alpha}, power={power}: {n_req} per group")
     
     # Scene 2: Calculate power for existing sample
     n = 50
     d = 0.5  # Medium effect
     
     achieved_power = calc.calculate_power(n, d, alpha)
-    print(f"Achieved power for n={n}, d={d}: {achieved_power:.4f}")
+    logger.info(f"Achieved power for n={n}, d={d}: {achieved_power:.4f}")
     
     # Scene 3: Calculate MDE
     mde = calc.calculate_minimum_detectable_effect(n, power=0.8)
-    print(f"MDE for n={n}, power={power}: {mde:.4f}")
+    logger.info(f"MDE for n={n}, power={power}: {mde:.4f}")
+
