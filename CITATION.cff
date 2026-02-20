@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Aircraft Engine Degradation & RUL Prediction"
+type: software
+authors:
+  - name: "Jitesh"
+    alias: jitesh523
+repository-code: "https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction"
+license: MIT
+version: "2.0.0"
+date-released: "2026-02-18"
+keywords:
+  - remaining-useful-life
+  - predictive-maintenance
+  - turbofan-engine
+  - deep-learning
+  - lstm
+  - nasa-cmapss
+  - prognostics
+abstract: >-
+  Enterprise-grade predictive maintenance system for turbofan engines
+  using the NASA C-MAPSS dataset. Features LSTM, Transformer, and
+  ensemble models with a 21-tab Streamlit dashboard spanning causal
+  inference, reinforcement learning, federated learning, digital twins,
+  and fleet management.
