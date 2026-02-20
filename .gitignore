@@ -60,3 +60,14 @@ reports/*.html
 # Environment
 .env
 .env.local
+
+# Type checking
+.mypy_cache/
+
+# Linting
+.ruff_cache/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
