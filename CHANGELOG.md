@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.1] — 2026-02-20
+
+### Added
+- **CITATION.cff**: Academic citation file — GitHub now shows "Cite this repository" button
+
+### Changed
+- **.gitignore**: Added patterns for `.mypy_cache/`, `.ruff_cache/`, `build/`, `dist/`, `*.egg-info/`
+
 ## [2.0.0] — 2026-02-18
+
 
 ### Added
 - **Phase 10**: Digital Twin simulation, Fleet Risk Monte Carlo, Report Engine
