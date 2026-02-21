@@ -68,10 +68,15 @@ check: lint test
 clean:
 	rm -rf __pycache__
 	rm -rf .pytest_cache
+	rm -rf .mypy_cache
+	rm -rf .ruff_cache
 	rm -rf .coverage
+	rm -rf coverage.xml
 	rm -rf htmlcov
 	rm -rf *.egg-info
+	rm -rf dist build
 	find . -type d -name "__pycache__" -exec rm -rf {} +
+	@echo "Cleaned all generated files."
 
 # ─── Docker ──────────────────────────────────────────────────
 docker-build:
