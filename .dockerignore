@@ -1,0 +1,49 @@
+# Ignore version control
+.git
+.gitignore
+
+# Python artifacts
+__pycache__
+*.py[cod]
+*.egg-info
+dist
+build
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing & coverage
+.pytest_cache
+.coverage
+htmlcov
+coverage.xml
+tests
+
+# Data & outputs
+CMAPSSData
+plots
+results
+logs
+reports
+
+# Model exports (rebuilt in container)
+*.tflite
+*.onnx
+
+# MLflow
+mlruns
+
+# Misc
+.mypy_cache
+.ruff_cache
+*.zip
+.env
+.env.local
