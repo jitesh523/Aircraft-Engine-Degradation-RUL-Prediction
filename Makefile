@@ -1,6 +1,29 @@
 # Makefile for Aircraft Engine RUL Prediction
 
-.PHONY: setup test test-cov test-quick lint format clean docker-build docker-run run-api run-dashboard security-scan check docs
+.PHONY: help setup test test-cov test-quick lint format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs
+
+# ─── Help (default) ───────────────────────────────────────────
+help:
+	@echo "╔══════════════════════════════════════════════════╗"
+	@echo "║  Aircraft Engine RUL Prediction — Makefile       ║"
+	@echo "╠══════════════════════════════════════════════════╣"
+	@echo "║  setup            Install all dependencies       ║"
+	@echo "║  run-api          Start FastAPI server            ║"
+	@echo "║  run-dashboard    Launch Streamlit dashboard      ║"
+	@echo "║  test             Run all tests (verbose)         ║"
+	@echo "║  test-quick       Run tests (fail-fast, quiet)    ║"
+	@echo "║  test-cov         Run tests with coverage report  ║"
+	@echo "║  lint             Check code style                ║"
+	@echo "║  format           Auto-format with Black          ║"
+	@echo "║  security-scan    Run Bandit security scan        ║"
+	@echo "║  check            Lint + test combined            ║"
+	@echo "║  clean            Remove generated files          ║"
+	@echo "║  docker-build     Build Docker image              ║"
+	@echo "║  docker-run       Run Docker container            ║"
+	@echo "║  docker-up        Start with docker-compose       ║"
+	@echo "║  docker-down      Stop docker-compose             ║"
+	@echo "║  validate-data    Run data validation checks      ║"
+	@echo "╚══════════════════════════════════════════════════╝"
 
 # ─── Setup ────────────────────────────────────────────────────
 setup:
