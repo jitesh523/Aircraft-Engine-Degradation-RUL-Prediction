@@ -1,0 +1,54 @@
+[project]
+name = "aircraft-engine-rul-prediction"
+version = "2.0.1"
+description = "Enterprise-grade predictive maintenance system for turbofan engines using NASA C-MAPSS dataset"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+
+[tool.black]
+line-length = 127
+target-version = ["py39", "py310", "py311"]
+exclude = '''
+/(
+    venv
+  | \.git
+  | __pycache__
+)/
+'''
+
+[tool.ruff]
+line-length = 127
+target-version = "py39"
+exclude = ["venv", ".git", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]  # line-length handled by formatter
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+no_strict_optional = true
+exclude = ["venv", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+timeout = 120
+addopts = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["venv/*", "tests/*", "setup.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "pass",
+]
