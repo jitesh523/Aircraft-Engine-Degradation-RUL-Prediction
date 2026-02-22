@@ -1,13 +1,22 @@
-# Development Dependencies
+# ─── Testing ──────────────────────────────────────────────────
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-timeout>=2.2.0
+coverage>=7.3.0
+
+# ─── Linting & Formatting ────────────────────────────────────
 flake8>=6.0.0
 black>=23.0.0
-bandit>=1.7.7
+ruff>=0.3.0
+pylint>=3.0.0
+
+# ─── Type Checking ───────────────────────────────────────────
 mypy>=1.8.0
-pre-commit>=3.6.0
 types-requests
 types-PyYAML
-pylint==3.0.3
-coverage==7.3.2
+
+# ─── Security ────────────────────────────────────────────────
+bandit>=1.7.7
+
+# ─── Git Hooks ───────────────────────────────────────────────
+pre-commit>=3.6.0
