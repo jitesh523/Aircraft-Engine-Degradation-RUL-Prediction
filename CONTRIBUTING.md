@@ -63,6 +63,8 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to maintain a w
 
 ### Makefile Shortcuts
 
+> **Tip:** Run `make` or `make help` to see all available targets.
+
 ```bash
 make setup           # Install all dependencies
 make test            # Run tests with timeout
@@ -143,12 +145,15 @@ We follow [PEP 8](https://www.python.org/dev/peps/pep-0008/) with some modificat
 
 ### Code Formatting
 
-Before committing, format your code:
+Before committing, format and lint your code:
 
 ```bash
 black . --exclude=venv
+ruff check . --fix          # fast linting with auto-fix
 flake8 . --exclude=venv --max-line-length=127
 ```
+
+> **Note:** All tool settings are centralized in `pyproject.toml`.
 
 ### Documentation
 
