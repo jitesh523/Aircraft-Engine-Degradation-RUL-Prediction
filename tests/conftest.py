@@ -13,6 +13,18 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
+# ─── Custom Markers ──────────────────────────────────────────────────────────
+def pytest_configure(config):
+    """Register custom markers to avoid warnings."""
+    config.addinivalue_line("markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')")
+    config.addinivalue_line("markers", "integration: marks integration tests requiring external services")
+    config.addinivalue_line("markers", "gpu: marks tests that require GPU resources")
+
+
+# ─── Constants ───────────────────────────────────────────────────────────────
+SENSOR_COLUMNS = [f"sensor_{i}" for i in range(1, 22)]
+
+
 @pytest.fixture
 def synthetic_fleet():
     """
