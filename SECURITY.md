@@ -4,6 +4,7 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 2.0.1   | :white_check_mark: Current |
 | 2.x     | :white_check_mark: |
 | 1.x     | :warning: Security fixes only |
 
@@ -55,6 +56,8 @@ When contributing to this project:
 4. **Use type hints** — Helps catch errors early
 5. **Run security scans** — `make security-scan` or `bandit -r . -x ./venv,./tests`
 6. **Avoid hardcoded paths** — Use `os.path` or env vars for portability
+7. **Use pre-commit hooks** — Run `pre-commit install` to auto-check before each commit
+8. **Pin Docker base images** — Use specific tags (e.g., `python:3.10-slim`) not `latest`
 
 ## Acknowledgments
 
