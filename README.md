@@ -118,6 +118,19 @@ streamlit run dashboard.py
 
 ---
 
+## Quick Start
+
+```bash
+git clone https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction.git
+cd Aircraft-Engine-Degradation-RUL-Prediction
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+make help            # see all available commands
+streamlit run dashboard.py
+```
+
+---
+
 ## Dataset
 
 The NASA C-MAPSS dataset contains run-to-failure data from turbofan engine simulations:
