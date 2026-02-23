@@ -1,6 +1,13 @@
 # Use Python 3.10 slim image
 FROM python:3.10-slim
 
+# OCI image metadata
+LABEL org.opencontainers.image.title="Aircraft Engine RUL Prediction API" \
+    org.opencontainers.image.description="Predictive maintenance API for turbofan engines using NASA C-MAPSS" \
+    org.opencontainers.image.version="2.0.1" \
+    org.opencontainers.image.source="https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction" \
+    org.opencontainers.image.licenses="MIT"
+
 # Set working directory
 WORKDIR /app
 
