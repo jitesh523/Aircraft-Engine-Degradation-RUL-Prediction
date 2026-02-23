@@ -4,13 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.1] — 2026-02-20
+## [2.0.1] — 2026-02-23
 
 ### Added
-- **CITATION.cff**: Academic citation file — GitHub now shows "Cite this repository" button
+- **CITATION.cff**: Academic citation file — GitHub shows "Cite this repository" button
+- **LICENSE**: MIT License file (was referenced in README but missing)
+- **pyproject.toml**: Centralized tool config (black, ruff, mypy, pytest, coverage)
+- **setup.cfg**: flake8 per-file ignores and isort black-compatible profile
+- **.dockerignore**: Leaner Docker builds — excludes tests, caches, data, IDE files
+- **.github/FUNDING.yml**: GitHub Sponsors button
+- **.github/ISSUE_TEMPLATE/bug_report.md**: Structured bug report template
+- **.github/ISSUE_TEMPLATE/feature_request.md**: Structured feature request template
+- **Makefile**: Default `make help` target listing all available commands
+- **README.md**: Quick Start section for faster onboarding
+- **conftest.py**: Custom pytest markers (`slow`, `integration`, `gpu`) and `SENSOR_COLUMNS` constant
+- **.pre-commit-config.yaml**: Ruff pre-commit hook with auto-fix
 
 ### Changed
 - **.gitignore**: Added patterns for `.mypy_cache/`, `.ruff_cache/`, `build/`, `dist/`, `*.egg-info/`
+- **Makefile**: Clean target now removes `.mypy_cache`, `.ruff_cache`, `dist`, `build`, `coverage.xml`
+- **requirements-dev.txt**: Organized into sections; added `ruff>=0.3.0`
+- **docker-compose.yml**: Added resource limits (2 CPU / 2GB) and JSON log rotation
+- **Dockerfile**: Added OCI-standard image labels
+- **SECURITY.md**: Added v2.0.1 version entry and 2 new best practices
+- **CONTRIBUTING.md**: Added `make help` tip and ruff linting instructions
 
 ## [2.0.0] — 2026-02-18
 
