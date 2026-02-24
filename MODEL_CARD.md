@@ -3,11 +3,12 @@
 ## Model Details
 
 - **Name**: Hybrid Ensemble Engine RUL Predictor
-- **Version**: 2.0.0
+- **Version**: 2.0.1
 - **Date**: February 2026
 - **Type**: Deep Learning / Ensemble / Time Series Regression
 - **Framework**: TensorFlow/Keras, Scikit-learn, XGBoost, LightGBM
 - **Architecture**: LSTM + Transformer + Gradient Boosting Ensemble with stacking
+- **License**: MIT
 
 ## Intended Use
 
@@ -98,3 +99,16 @@ The system includes:
 - **Performance Monitoring**: RMSE degradation tracking
 
 Retraining is recommended if PSI > 0.2 for key sensors or if RMSE increases by >10%.
+
+## Reproducibility
+
+```bash
+# Clone → set up → train → evaluate
+git clone https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction.git
+cd Aircraft-Engine-Degradation-RUL-Prediction
+pip install -r requirements.txt
+python train.py --dataset FD001
+python predict.py --dataset FD001
+```
+
+All hyperparameters are defined in `config.py`. Tool settings are centralized in `pyproject.toml`.
