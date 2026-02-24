@@ -1,31 +1,51 @@
+# ─── Core Data Science ────────────────────────────────────────
 numpy>=1.24.0
 pandas>=2.0.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
+scipy>=1.11.0
 scikit-learn>=1.3.0
+
+# ─── Deep Learning ───────────────────────────────────────────
 tensorflow==2.13.0
 # keras==2.13.1  # Managed by tensorflow
-jupyter>=1.0.0
-notebook>=7.0.0
-scipy>=1.11.0
-optuna>=3.3.0
-shap>=0.42.0
+
+# ─── Gradient Boosting ───────────────────────────────────────
+xgboost>=2.0.0
+lightgbm>=4.1.0
+# catboost>=1.2.0  # Optional: may require cmake/ninja — install separately if needed
+
+# ─── Visualization ───────────────────────────────────────────
+matplotlib>=3.7.0
+seaborn>=0.12.0
+plotly>=5.18.0
+
+# ─── Web Framework & API ────────────────────────────────────
+streamlit>=1.29.0
 fastapi>=0.104.0
 uvicorn>=0.24.0
 pydantic>=2.5.0
-streamlit>=1.29.0
-plotly>=5.18.0
+
+# ─── MLOps & Experiment Tracking ────────────────────────────
 mlflow>=2.10.0
-xgboost>=2.0.0
-lightgbm>=4.1.0
-# catboost>=1.2.0  # Optional: may require cmake/ninja to build - install separately if needed
-redis>=5.0.0
+optuna>=3.3.0
+shap>=0.42.0
+
+# ─── Model Export ────────────────────────────────────────────
 onnx>=1.15.0
 onnxruntime>=1.16.0
 skl2onnx>=1.16.0
 tf2onnx>=1.16.0
 
-statsmodels>=0.14.0
-google-generativeai>=0.3.0
-lifelines>=0.28.0
+# ─── Streaming & Infrastructure ─────────────────────────────
+redis>=5.0.0
 psutil>=5.9.0
+
+# ─── Statistical & Domain-Specific ──────────────────────────
+statsmodels>=0.14.0
+lifelines>=0.28.0
+
+# ─── AI Assistant ────────────────────────────────────────────
+google-generativeai>=0.3.0
+
+# ─── Notebooks (optional) ───────────────────────────────────
+jupyter>=1.0.0
+notebook>=7.0.0
