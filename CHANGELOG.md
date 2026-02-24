@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.1] — 2026-02-23
+## [2.0.1] — 2026-02-24
 
 ### Added
 - **CITATION.cff**: Academic citation file — GitHub shows "Cite this repository" button
@@ -15,19 +15,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **.github/FUNDING.yml**: GitHub Sponsors button
 - **.github/ISSUE_TEMPLATE/bug_report.md**: Structured bug report template
 - **.github/ISSUE_TEMPLATE/feature_request.md**: Structured feature request template
+- **.github/PULL_REQUEST_TEMPLATE.md**: Structured PR template with testing checklist
+- **.github/dependabot.yml**: Automated weekly dependency updates (pip + Actions)
 - **Makefile**: Default `make help` target listing all available commands
+- **Makefile**: `train` and `predict` targets for quick FD001 training/evaluation
 - **README.md**: Quick Start section for faster onboarding
-- **conftest.py**: Custom pytest markers (`slow`, `integration`, `gpu`) and `SENSOR_COLUMNS` constant
+- **conftest.py**: Custom pytest markers, `small_fleet` fixture, `ALL_FEATURE_COLUMNS` constant
 - **.pre-commit-config.yaml**: Ruff pre-commit hook with auto-fix
 
 ### Changed
 - **.gitignore**: Added patterns for `.mypy_cache/`, `.ruff_cache/`, `build/`, `dist/`, `*.egg-info/`
 - **Makefile**: Clean target now removes `.mypy_cache`, `.ruff_cache`, `dist`, `build`, `coverage.xml`
+- **requirements.txt**: Organized into 10 logical sections with comments
 - **requirements-dev.txt**: Organized into sections; added `ruff>=0.3.0`
 - **docker-compose.yml**: Added resource limits (2 CPU / 2GB) and JSON log rotation
 - **Dockerfile**: Added OCI-standard image labels
+- **.editorconfig**: Added rules for Dockerfile, .cfg, .cff, and shell scripts
 - **SECURITY.md**: Added v2.0.1 version entry and 2 new best practices
 - **CONTRIBUTING.md**: Added `make help` tip and ruff linting instructions
+- **MODEL_CARD.md**: Bumped to v2.0.1, added license field and reproducibility section
+- **DASHBOARD.md**: Updated to v2.0.1, added env vars table and usage tips
+- **API.md**: Added quick curl cheat sheet for all endpoints
 
 ## [2.0.0] — 2026-02-18
 
