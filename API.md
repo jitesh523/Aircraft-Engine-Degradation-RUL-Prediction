@@ -238,3 +238,28 @@ docker-compose down
 - **Prediction latency**: ~100ms per engine (LSTM)
 - **Throughput**: ~10 requests/second (single instance)
 - **Model loading time**: ~5 seconds on startup
+
+## Quick curl Cheat Sheet
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Get model info
+curl http://localhost:8000/models/info
+
+# Predict (from file)
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d @sample_request.json
+
+# Find similar engines
+curl -X POST http://localhost:8000/analyze/similarity \
+  -H "Content-Type: application/json" \
+  -d '{"engine_id": 42, "top_k": 5}'
+
+# Cost optimization
+curl -X POST http://localhost:8000/optimize/cost \
+  -H "Content-Type: application/json" \
+  -d '{"preference": "balanced"}'
+```
