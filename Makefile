@@ -1,6 +1,6 @@
 # Makefile for Aircraft Engine RUL Prediction
 
-.PHONY: help setup test test-cov test-quick lint format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs
+.PHONY: help setup train predict test test-cov test-quick lint format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs
 
 # ─── Help (default) ───────────────────────────────────────────
 help:
@@ -10,6 +10,8 @@ help:
 	@echo "║  setup            Install all dependencies       ║"
 	@echo "║  run-api          Start FastAPI server            ║"
 	@echo "║  run-dashboard    Launch Streamlit dashboard      ║"
+	@echo "║  train            Train LSTM on FD001 dataset     ║"
+	@echo "║  predict          Run predictions on FD001        ║"
 	@echo "║  test             Run all tests (verbose)         ║"
 	@echo "║  test-quick       Run tests (fail-fast, quiet)    ║"
 	@echo "║  test-cov         Run tests with coverage report  ║"
@@ -94,6 +96,15 @@ docker-down:
 # ─── Validation ──────────────────────────────────────────────
 validate-data:
 	python data_validator.py
+
+# ─── Training & Prediction ───────────────────────────────────
+train:
+	python train.py --dataset FD001
+	@echo "Training complete."
+
+predict:
+	python predict.py --dataset FD001
+	@echo "Prediction complete."
 
 # ─── Documentation ───────────────────────────────────────────
 docs:
