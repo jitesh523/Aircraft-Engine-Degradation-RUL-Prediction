@@ -40,9 +40,16 @@ Dashboard will be available at **http://localhost:8501**
 
 ## Sidebar
 
-- **Version footer**: v2.0, 48 modules, 21 tabs, Python version
+- **Version footer**: v2.0.1, 48 modules, 21 tabs, Python version
 - **Navigation**: Select any tab from the sidebar dropdown
 - **AI Assistant**: LLM-powered maintenance chat (requires `GEMINI_API_KEY`)
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | Google Gemini API key for AI Assistant tab | _(none)_ |
+| `CMAPSS_DATA_DIR` | Path to C-MAPSS dataset directory | `./CMAPSSData` |
 
 ## Deployment
 
@@ -59,3 +66,9 @@ docker run -p 8501:8501 rul-dashboard
 
 ### Cloud
 Push to GitHub → Deploy on [Streamlit Cloud](https://share.streamlit.io)
+
+## Tips
+
+- Run `make help` to see all available Makefile targets
+- Use `make run-dashboard` as a shortcut for `streamlit run dashboard.py`
+- The dashboard auto-reloads when source files change
