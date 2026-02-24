@@ -23,6 +23,23 @@ def pytest_configure(config):
 
 # ─── Constants ───────────────────────────────────────────────────────────────
 SENSOR_COLUMNS = [f"sensor_{i}" for i in range(1, 22)]
+OPERATIONAL_SETTINGS = ["setting_1", "setting_2", "setting_3"]
+ALL_FEATURE_COLUMNS = OPERATIONAL_SETTINGS + SENSOR_COLUMNS
+
+
+@pytest.fixture
+def small_fleet():
+    """Generate a small fleet (3 engines) for fast-running tests."""
+    np.random.seed(99)
+    rows = []
+    for uid in range(1, 4):
+        n_cycles = np.random.randint(50, 80)
+        for t in range(1, n_cycles + 1):
+            row = {'unit_id': uid, 'time_cycles': t, 'RUL': n_cycles - t}
+            for s in range(1, 22):
+                row[f'sensor_{s}'] = 100 + s * 10 + t * 0.01 * s + np.random.normal(0, 1)
+            rows.append(row)
+    return pd.DataFrame(rows)
 
 
 @pytest.fixture
