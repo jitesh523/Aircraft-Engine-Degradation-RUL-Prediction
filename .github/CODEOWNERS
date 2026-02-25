@@ -1,0 +1,23 @@
+# CODEOWNERS — auto-assign reviewers for pull requests
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything
+* @jitesh523
+
+# Core ML modules
+/train.py @jitesh523
+/predict.py @jitesh523
+/models/ @jitesh523
+
+# API & Dashboard
+/api.py @jitesh523
+/dashboard.py @jitesh523
+
+# CI/CD & Infrastructure
+/.github/ @jitesh523
+/Dockerfile @jitesh523
+/docker-compose.yml @jitesh523
+/Makefile @jitesh523
+
+# Tests
+/tests/ @jitesh523
