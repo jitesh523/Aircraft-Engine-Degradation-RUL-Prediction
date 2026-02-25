@@ -30,12 +30,20 @@ COPY . .
 # Create directories for models and results
 RUN mkdir -p models/saved results plots logs
 
+# Create non-root user for security
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --no-create-home appuser && \
+    chown -R appuser:appuser /app
+
 # Expose API port
 EXPOSE 8000
 
 # Health check using curl (lightweight, no extra Python deps)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
+
+# Switch to non-root user
+USER appuser
 
 # Run API server
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
