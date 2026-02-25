@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.1] — 2026-02-24
+## [2.0.1] — 2026-02-25
 
 ### Added
 - **CITATION.cff**: Academic citation file — GitHub shows "Cite this repository" button
@@ -16,11 +16,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **.github/ISSUE_TEMPLATE/bug_report.md**: Structured bug report template
 - **.github/ISSUE_TEMPLATE/feature_request.md**: Structured feature request template
 - **.github/PULL_REQUEST_TEMPLATE.md**: Structured PR template with testing checklist
+- **.github/CODEOWNERS**: Auto-assign PR reviewers by area (core ML, API, infra, tests)
 - **.github/dependabot.yml**: Automated weekly dependency updates (pip + Actions)
+- **.github/workflows/stale.yml**: Auto-close stale issues/PRs after 60 days
 - **Makefile**: Default `make help` target listing all available commands
-- **Makefile**: `train` and `predict` targets for quick FD001 training/evaluation
-- **README.md**: Quick Start section for faster onboarding
-- **conftest.py**: Custom pytest markers, `small_fleet` fixture, `ALL_FEATURE_COLUMNS` constant
+- **Makefile**: `train`, `predict`, and `lint-fix` targets
+- **README.md**: Quick Start section for faster onboarding; pre-commit and version badges
+- **conftest.py**: Custom pytest markers, `small_fleet` fixture, `tmp_model_dir`, `ALL_FEATURE_COLUMNS`
 - **.pre-commit-config.yaml**: Ruff pre-commit hook with auto-fix
 
 ### Changed
@@ -29,13 +31,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **requirements.txt**: Organized into 10 logical sections with comments
 - **requirements-dev.txt**: Organized into sections; added `ruff>=0.3.0`
 - **docker-compose.yml**: Added resource limits (2 CPU / 2GB) and JSON log rotation
-- **Dockerfile**: Added OCI-standard image labels
+- **Dockerfile**: Added OCI labels, non-root `appuser` for security
 - **.editorconfig**: Added rules for Dockerfile, .cfg, .cff, and shell scripts
 - **SECURITY.md**: Added v2.0.1 version entry and 2 new best practices
-- **CONTRIBUTING.md**: Added `make help` tip and ruff linting instructions
+- **CONTRIBUTING.md**: Added `make help` tip, ruff instructions, and First-Time Contributors section
 - **MODEL_CARD.md**: Bumped to v2.0.1, added license field and reproducibility section
 - **DASHBOARD.md**: Updated to v2.0.1, added env vars table and usage tips
-- **API.md**: Added quick curl cheat sheet for all endpoints
+- **API.md**: Added quick curl cheat sheet; bumped version to 2.0.1
+- **MLFLOW_GUIDE.md**: Added `make setup` reference, fixed Docker Python version, added tip
 
 ## [2.0.0] — 2026-02-18
 
