@@ -1,6 +1,6 @@
 # Makefile for Aircraft Engine RUL Prediction
 
-.PHONY: help setup train predict test test-cov test-quick lint format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs
+.PHONY: help setup train predict test test-cov test-quick lint lint-fix format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs
 
 # ─── Help (default) ───────────────────────────────────────────
 help:
@@ -17,6 +17,7 @@ help:
 	@echo "║  test-cov         Run tests with coverage report  ║"
 	@echo "║  lint             Check code style                ║"
 	@echo "║  format           Auto-format with Black          ║"
+	@echo "║  lint-fix         Auto-fix lint issues (ruff+black)║"
 	@echo "║  security-scan    Run Bandit security scan        ║"
 	@echo "║  check            Lint + test combined            ║"
 	@echo "║  clean            Remove generated files          ║"
@@ -58,6 +59,11 @@ lint:
 
 format:
 	black . --exclude=venv
+
+lint-fix:
+	ruff check . --fix --exclude=venv
+	black . --exclude=venv
+	@echo "Auto-fixed lint issues."
 
 security-scan:
 	bandit -r . -x ./venv,./tests -ll
