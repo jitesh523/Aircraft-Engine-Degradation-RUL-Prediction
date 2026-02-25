@@ -6,9 +6,11 @@ MLflow is integrated into the RUL prediction system to provide comprehensive exp
 
 ## Installation
 
-MLflow is included in `requirements.txt`. If you need to install it separately:
+MLflow is included in `requirements.txt`. Install all dependencies at once:
 
 ```bash
+make setup
+# or manually:
 pip install mlflow>=2.10.0
 ```
 
@@ -234,7 +236,7 @@ tracker = MLflowTracker(
 
 ```dockerfile
 # Include MLflow model serving
-FROM python:3.8-slim
+FROM python:3.10-slim
 
 # Install MLflow
 RUN pip install mlflow
@@ -267,3 +269,5 @@ async def predict(data: EngineData):
 - [MLflow Documentation](https://mlflow.org/docs/latest/index.html)
 - [Model Registry Guide](https://mlflow.org/docs/latest/model-registry.html)
 - [MLflow Tracking API](https://mlflow.org/docs/latest/tracking.html)
+
+> **Tip:** Run `make help` to see all available project commands including `make train` and `make predict`.
