@@ -8,8 +8,10 @@
 ![CI/CD](https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction/workflows/CI%2FCD%20Pipeline/badge.svg)
 ![Security](https://img.shields.io/badge/Security-Bandit%20%7C%20CodeQL-brightgreen.svg)
 ![Code Style](https://img.shields.io/badge/code%20style-black-000000.svg)
+![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)
 ![Dashboard](https://img.shields.io/badge/Dashboard-Streamlit-FF4B4B.svg)
 ![Modules](https://img.shields.io/badge/Modules-48-blueviolet.svg)
+![Version](https://img.shields.io/badge/version-2.0.1-informational.svg)
 
 ---
 
