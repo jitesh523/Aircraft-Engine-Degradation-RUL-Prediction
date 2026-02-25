@@ -85,3 +85,11 @@ def fleet_rul_df():
             np.random.randint(80, 180, 8),
         ]).astype(float)
     })
+
+
+@pytest.fixture
+def tmp_model_dir(tmp_path):
+    """Provide a clean temporary directory for model save/load tests."""
+    model_dir = tmp_path / "models" / "saved"
+    model_dir.mkdir(parents=True)
+    return model_dir
