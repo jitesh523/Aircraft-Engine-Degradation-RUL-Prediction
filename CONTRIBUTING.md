@@ -300,4 +300,16 @@ If you have questions, feel free to:
 - Reach out to maintainers
 - Check existing issues and PRs for similar questions
 
+## First-Time Contributors
+
+Welcome! Here are some great first contributions:
+
+- 📝 Fix typos or improve documentation
+- 🧪 Add tests for untested functions
+- 🐛 Fix issues labeled [`good first issue`](https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction/labels/good%20first%20issue)
+- 📊 Improve visualizations or add new dashboard charts
+- 🔧 Add type hints to functions missing them
+
+> **Tip:** Run `make help` to explore the project, and `make test-quick` to verify nothing is broken.
+
 Thank you for contributing! 🚀
