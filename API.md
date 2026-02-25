@@ -50,7 +50,7 @@ Check API health status.
   "status": "healthy",
   "models_loaded": true,
   "available_models": ["lstm", "random_forest", "linear_regression"],
-  "version": "1.0.0"
+  "version": "2.0.1"
 }
 ```
 
