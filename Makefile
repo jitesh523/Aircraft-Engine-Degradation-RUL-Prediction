@@ -114,4 +114,6 @@ predict:
 
 # ─── Documentation ───────────────────────────────────────────
 docs:
-	@echo "Documentation generation not implemented yet. See README.md"
+	@echo "Opening project documentation..."
+	@open README.md 2>/dev/null || xdg-open README.md 2>/dev/null || echo "Open README.md manually"
+	@echo "See also: API.md, DASHBOARD.md, MLFLOW_GUIDE.md, MODEL_CARD.md"
