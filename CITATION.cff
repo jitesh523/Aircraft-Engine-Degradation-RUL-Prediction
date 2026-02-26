@@ -7,8 +7,8 @@ authors:
     alias: jitesh523
 repository-code: "https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction"
 license: MIT
-version: "2.0.0"
-date-released: "2026-02-18"
+version: "2.0.1"
+date-released: "2026-02-26"
 keywords:
   - remaining-useful-life
   - predictive-maintenance
