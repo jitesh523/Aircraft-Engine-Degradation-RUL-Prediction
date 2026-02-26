@@ -1,0 +1,37 @@
+# Auto detect text files and normalize line endings
+* text=auto
+
+# Force LF line endings for these files
+*.py text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.cfg text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.sh text eol=lf
+*.cff text eol=lf
+Makefile text eol=lf
+Dockerfile text eol=lf
+*.dockerignore text eol=lf
+
+# Denote binary files that should not be modified
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.h5 binary
+*.hdf5 binary
+*.pkl binary
+*.joblib binary
+*.onnx binary
+*.tflite binary
+
+# Improve diff output for Python
+*.py diff=python
+
+# Linguist overrides — exclude vendor/generated from stats
+tests/data/** linguist-generated
+*.min.js linguist-vendored
