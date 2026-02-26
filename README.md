@@ -15,6 +15,20 @@
 
 ---
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Dataset](#dataset)
+- [Installation](#installation)
+- [Project Structure](#project-structure)
+- [Usage](#usage)
+- [Model Architecture](#model-architecture)
+- [Performance](#performance)
+- [Configuration](#configuration)
+- [Contributing](#contributing)
+- [License](#license)
+
 ## Overview
 
 This project implements a comprehensive Remaining Useful Life (RUL) prediction system for aircraft turbofan engines using the NASA Commercial Modular Aero-Propulsion System Simulation (C-MAPSS) dataset. The system spans **11 development phases** — from deep learning (LSTM/Transformer) and gradient boosting ensembles to causal inference, reinforcement learning, federated learning, and interactive fleet management — all unified in a **21-tab Streamlit dashboard**.
