@@ -4,25 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.1] — 2026-02-25
+## [2.0.1] — 2026-02-26
 
 ### Added
 - **CITATION.cff**: Academic citation file — GitHub shows "Cite this repository" button
 - **LICENSE**: MIT License file (was referenced in README but missing)
 - **pyproject.toml**: Centralized tool config (black, ruff, mypy, pytest, coverage)
 - **setup.cfg**: flake8 per-file ignores and isort black-compatible profile
+- **.gitattributes**: Consistent LF line endings, binary file markers, Python-aware diffs
 - **.dockerignore**: Leaner Docker builds — excludes tests, caches, data, IDE files
 - **.github/FUNDING.yml**: GitHub Sponsors button
 - **.github/ISSUE_TEMPLATE/bug_report.md**: Structured bug report template
 - **.github/ISSUE_TEMPLATE/feature_request.md**: Structured feature request template
 - **.github/PULL_REQUEST_TEMPLATE.md**: Structured PR template with testing checklist
 - **.github/CODEOWNERS**: Auto-assign PR reviewers by area (core ML, API, infra, tests)
+- **.github/labeler.yml**: PR label config mapping file patterns to labels
 - **.github/dependabot.yml**: Automated weekly dependency updates (pip + Actions)
 - **.github/workflows/stale.yml**: Auto-close stale issues/PRs after 60 days
-- **Makefile**: Default `make help` target listing all available commands
-- **Makefile**: `train`, `predict`, and `lint-fix` targets
-- **README.md**: Quick Start section for faster onboarding; pre-commit and version badges
-- **conftest.py**: Custom pytest markers, `small_fleet` fixture, `tmp_model_dir`, `ALL_FEATURE_COLUMNS`
+- **.github/workflows/labeler.yml**: Auto-label PRs based on changed file patterns
+- **Makefile**: Default `make help`, `train`, `predict`, `lint-fix`, and `docs` targets
+- **README.md**: Quick Start section, table of contents, pre-commit and version badges
+- **conftest.py**: Pytest markers, `small_fleet`, `tmp_model_dir`, `mock_config`, `ALL_FEATURE_COLUMNS`
 - **.pre-commit-config.yaml**: Ruff pre-commit hook with auto-fix
 
 ### Changed
@@ -33,7 +35,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **docker-compose.yml**: Added resource limits (2 CPU / 2GB) and JSON log rotation
 - **Dockerfile**: Added OCI labels, non-root `appuser` for security
 - **.editorconfig**: Added rules for Dockerfile, .cfg, .cff, and shell scripts
+- **pyproject.toml**: Added ruff isort config with known-first-party and per-file-ignores
+- **config.py**: Expanded module docstring with env var reference and usage example
+- **CITATION.cff**: Bumped version to 2.0.1, updated release date
 - **SECURITY.md**: Added v2.0.1 version entry and 2 new best practices
+- **CODE_OF_CONDUCT.md**: Updated to Contributor Covenant v2.1
 - **CONTRIBUTING.md**: Added `make help` tip, ruff instructions, and First-Time Contributors section
 - **MODEL_CARD.md**: Bumped to v2.0.1, added license field and reproducibility section
 - **DASHBOARD.md**: Updated to v2.0.1, added env vars table and usage tips
