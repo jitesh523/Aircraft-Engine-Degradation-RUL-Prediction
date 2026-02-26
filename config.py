@@ -1,6 +1,21 @@
 """
-Configuration file for Aircraft Engine RUL Prediction System
-Contains dataset paths, model hyperparameters, and system settings
+Configuration file for Aircraft Engine RUL Prediction System.
+
+Contains dataset paths, model hyperparameters, and system settings.
+All parameters can be overridden via environment variables or a JSON/YAML
+config file using the ``ConfigurationManager`` class.
+
+Environment Variable Overrides:
+    CMAPSS_DATA_DIR   — Dataset directory (default: ~/Downloads/CMAPSSData)
+    RUL_SEQUENCE_LENGTH — LSTM look-back window (default: 30)
+    RUL_RANDOM_SEED     — Global random seed (default: 42)
+    RUL_RUL_CAP         — Maximum RUL clipping value (default: 125)
+
+Usage::
+
+    from config import LSTM_CONFIG, RANDOM_SEED, ConfigurationManager
+    cfg = ConfigurationManager()
+    print(cfg.get_summary())
 """
 
 import os
