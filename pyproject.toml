@@ -25,6 +25,15 @@ exclude = ["venv", ".git", "__pycache__"]
 select = ["E", "F", "W", "I", "UP"]
 ignore = ["E501"]  # line-length handled by formatter
 
+[tool.ruff.lint.isort]
+known-first-party = ["config", "utils", "data_loader", "preprocessor", "train", "predict", "api", "dashboard"]
+force-single-line = false
+combine-as-imports = true
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["D100", "D101", "D102", "D103"]
+
 [tool.mypy]
 python_version = "3.9"
 ignore_missing_imports = true
