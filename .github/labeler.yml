@@ -1,0 +1,38 @@
+# Label configuration for actions/labeler
+# Maps labels to file path patterns
+
+"python":
+  - changed-files:
+    - any-glob-to-any-file: "*.py"
+
+"tests":
+  - changed-files:
+    - any-glob-to-any-file: "tests/**"
+
+"documentation":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "*.md"
+      - "docs/**"
+
+"ci":
+  - changed-files:
+    - any-glob-to-any-file:
+      - ".github/workflows/**"
+      - "Makefile"
+      - "Dockerfile"
+      - "docker-compose.yml"
+
+"config":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "pyproject.toml"
+      - "setup.cfg"
+      - ".pre-commit-config.yaml"
+      - ".editorconfig"
+      - "config.py"
+
+"dependencies":
+  - changed-files:
+    - any-glob-to-any-file:
+      - "requirements*.txt"
