@@ -93,3 +93,24 @@ def tmp_model_dir(tmp_path):
     model_dir = tmp_path / "models" / "saved"
     model_dir.mkdir(parents=True)
     return model_dir
+
+
+@pytest.fixture
+def mock_config(tmp_path):
+    """Provide a lightweight config dict for tests needing config values."""
+    return {
+        'data_dir': str(tmp_path / "data"),
+        'models_dir': str(tmp_path / "models"),
+        'results_dir': str(tmp_path / "results"),
+        'sequence_length': 30,
+        'random_seed': 42,
+        'rul_cap': 125,
+        'lstm': {
+            'lstm_units': [64, 32],
+            'dropout_rate': 0.2,
+            'learning_rate': 0.001,
+            'batch_size': 32,
+            'epochs': 5,
+            'patience': 3,
+        },
+    }
