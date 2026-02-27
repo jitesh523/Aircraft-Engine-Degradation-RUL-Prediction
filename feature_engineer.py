@@ -1,6 +1,21 @@
 """
-Feature Engineering for NASA C-MAPSS Dataset
-Creates rolling statistics, rate-of-change features, and health indicators
+Feature Engineering for NASA C-MAPSS Dataset.
+
+Creates rolling statistics, rate-of-change features, and physics-based
+health indicators from sensor data.  Also provides data augmentation
+and automated feature selection.
+
+Classes:
+    FeatureEngineer           — Rolling stats, rate-of-change, health indicators.
+    TimeSeriesAugmenter       — Jitter, scaling, window-slice, interpolation.
+    FeatureImportanceAnalyzer — Permutation importance and redundancy detection.
+    FeatureSelector           — Variance threshold and RFE-based selection.
+
+Usage::
+
+    from feature_engineer import engineer_features
+    result = engineer_features(train_df)
+    train_engineered = result['train']
 """
 
 import pandas as pd
