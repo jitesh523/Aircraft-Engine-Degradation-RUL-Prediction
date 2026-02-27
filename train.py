@@ -862,16 +862,23 @@ class DistributedTrainer:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Train RUL prediction models')
+    parser = argparse.ArgumentParser(
+        description='Train RUL prediction models on NASA C-MAPSS turbofan engine data.',
+        epilog='Examples:\n'
+               '  python train.py --dataset FD001\n'
+               '  python train.py --dataset FD002 --skip-lstm\n'
+               '  python train.py --skip-baseline --skip-anomaly\n',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument('--dataset', type=str, default='FD001',
                        choices=['FD001', 'FD002', 'FD003', 'FD004'],
-                       help='Dataset to use for training')
+                       help='C-MAPSS sub-dataset (default: FD001)')
     parser.add_argument('--skip-baseline', action='store_true',
-                       help='Skip baseline model training')
+                       help='skip Random Forest and Linear Regression training')
     parser.add_argument('--skip-lstm', action='store_true',
-                       help='Skip LSTM model training')
+                       help='skip LSTM deep-learning model training')
     parser.add_argument('--skip-anomaly', action='store_true',
-                       help='Skip anomaly detector training')
+                       help='skip anomaly detector (Isolation Forest) training')
     
     args = parser.parse_args()
     
