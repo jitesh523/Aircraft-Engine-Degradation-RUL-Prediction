@@ -3,6 +3,11 @@ services:
   api:
     build: .
     container_name: rul-prediction-api
+    env_file:
+      - .env
+    labels:
+      app: rul-prediction
+      version: "2.0.1"
     ports:
       - "8000:8000"
     volumes:
