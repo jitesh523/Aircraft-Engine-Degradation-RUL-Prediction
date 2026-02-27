@@ -1,6 +1,6 @@
 # Makefile for Aircraft Engine RUL Prediction
 
-.PHONY: help setup train predict test test-cov test-quick lint lint-fix format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs
+.PHONY: help setup train predict test test-cov test-quick lint lint-fix format clean docker-build docker-run docker-up docker-down run-api run-dashboard security-scan check validate-data docs profile
 
 # ─── Help (default) ───────────────────────────────────────────
 help:
@@ -26,6 +26,7 @@ help:
 	@echo "║  docker-up        Start with docker-compose       ║"
 	@echo "║  docker-down      Stop docker-compose             ║"
 	@echo "║  validate-data    Run data validation checks      ║"
+	@echo "║  profile          Profile training with cProfile   ║"
 	@echo "╚══════════════════════════════════════════════════╝"
 
 # ─── Setup ────────────────────────────────────────────────────
@@ -117,3 +118,8 @@ docs:
 	@echo "Opening project documentation..."
 	@open README.md 2>/dev/null || xdg-open README.md 2>/dev/null || echo "Open README.md manually"
 	@echo "See also: API.md, DASHBOARD.md, MLFLOW_GUIDE.md, MODEL_CARD.md"
+
+# ─── Profiling ────────────────────────────────────────────────
+profile:
+	python -m cProfile -s cumtime train.py --dataset FD001 --skip-lstm 2>&1 | head -40
+	@echo "Full profile saved. Use snakeviz for visualization."
