@@ -15,7 +15,7 @@ We take security seriously. If you discover a security vulnerability, please fol
 ### How to Report
 
 1. **DO NOT** open a public issue
-2. Email security concerns to the project maintainers
+2. Email security concerns to **security@jitesh523.dev** (or open a [private security advisory](https://github.com/jitesh523/Aircraft-Engine-Degradation-RUL-Prediction/security/advisories/new))
 3. Include detailed information about the vulnerability:
    - Type of vulnerability
    - Full path to the affected file(s)
