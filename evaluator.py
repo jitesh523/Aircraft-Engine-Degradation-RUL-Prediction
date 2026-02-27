@@ -1,6 +1,21 @@
 """
-Model Evaluator for RUL Prediction
-Evaluates models and generates performance metrics
+Model Evaluator for RUL Prediction.
+
+Evaluates models and generates performance metrics including RMSE, MAE, R²,
+and NASA asymmetric scoring.  Supports bootstrap confidence intervals,
+time-series cross-validation, engine-aware CV, and inference benchmarking.
+
+Classes:
+    RULEvaluator             — Core metric computation and model comparison.
+    PerformanceBenchmark     — Latency, throughput, and memory profiling.
+    CrossValidationPipeline  — Engine-aware and time-series CV strategies.
+
+Usage::
+
+    from evaluator import RULEvaluator
+    evaluator = RULEvaluator()
+    metrics = evaluator.evaluate_predictions(y_true, y_pred, model_name='LSTM')
+    print(f"RMSE: {metrics['rmse']:.2f}")
 """
 
 import numpy as np
