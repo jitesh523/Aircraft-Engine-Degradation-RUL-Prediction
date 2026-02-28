@@ -1,6 +1,21 @@
 """
-FastAPI REST API for RUL Prediction
-Provides HTTP endpoints for making predictions and getting model info
+FastAPI REST API for RUL Prediction.
+
+Provides HTTP endpoints for making real-time RUL predictions, health
+checks, and model information.  Models are loaded on startup.
+
+Endpoints:
+    GET  /health        — API health and model availability.
+    POST /predict       — Predict RUL for one or more engines.
+    GET  /models/info   — Architecture details and ensemble weights.
+
+Classes:
+    APIRequestLogger    — Request logging, rate limiting, and analytics.
+    HealthCheckMonitor  — System resource and dependency monitoring.
+
+Usage::
+
+    uvicorn api:app --host 0.0.0.0 --port 8000
 """
 
 from fastapi import FastAPI, HTTPException, status
