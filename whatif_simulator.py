@@ -1,6 +1,18 @@
 """
-What-If Scenario Simulator for Maintenance Decision Support
-Simulates counterfactual scenarios: delayed maintenance, accelerated degradation, etc.
+What-If Scenario Simulator for Maintenance Decision Support.
+
+Simulates counterfactual scenarios — delayed maintenance, accelerated
+sensor drift, and fleet-wide strategy comparisons — to help operators
+make data-driven maintenance decisions.
+
+Classes:
+    WhatIfSimulator — Scenario engine with Plotly visualizations.
+
+Usage::
+
+    from whatif_simulator import WhatIfSimulator
+    sim = WhatIfSimulator()
+    result = sim.simulate_delayed_maintenance(current_rul=60, delay_cycles=30)
 """
 
 import numpy as np
