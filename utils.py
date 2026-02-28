@@ -1,6 +1,26 @@
 """
-Utility functions for Aircraft Engine RUL Prediction System
-Helper functions for data manipulation, sequence generation, and model I/O
+Utility functions for Aircraft Engine RUL Prediction System.
+
+Provides shared helpers used across the project: logging setup, LSTM
+sequence generation, model/scaler I/O, data manipulation (RUL labels,
+rolling statistics, rate-of-change), and the NASA asymmetric scorer.
+
+Sections:
+    Logging                — ``setup_logging``
+    Sequence Generation    — ``generate_sequences``, ``generate_sequences_for_prediction``
+    Model I/O              — ``save_model``, ``load_model``, ``save_scaler``, ``load_scaler``
+    Results I/O            — ``save_results``, ``load_results``
+    Data Manipulation      — ``add_remaining_useful_life``, ``add_rolling_statistics``
+    Evaluation Helpers     — ``asymmetric_score``
+
+Classes:
+    PredictionExplainer          — Human-readable RUL explanations.
+    ComprehensiveReportGenerator — Fleet and model performance reports.
+
+Usage::
+
+    from utils import setup_logging, generate_sequences
+    logger = setup_logging(__name__)
 """
 
 import numpy as np
