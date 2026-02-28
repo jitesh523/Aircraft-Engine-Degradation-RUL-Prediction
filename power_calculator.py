@@ -1,6 +1,18 @@
 """
-Power Calculator
-Calculates statistical power and sample size for A/B testing and experimentation
+Power Calculator for Experiment Design.
+
+Calculates statistical power, required sample size, and minimum
+detectable effect (MDE) for A/B tests using independent two-sample
+t-tests, with power curve visualization.
+
+Classes:
+    PowerCalculator — Sample size, power, MDE, Cohen's d, power curves.
+
+Usage::
+
+    from power_calculator import PowerCalculator
+    calc = PowerCalculator()
+    n = calc.calculate_sample_size(effect_size=0.5, power=0.8)
 """
 
 import numpy as np
