@@ -1,6 +1,20 @@
 """
-Data Loader for NASA C-MAPSS Turbofan Engine Degradation Dataset
-Loads train, test, and RUL data for all FD001-FD004 datasets
+Data Loader for NASA C-MAPSS Turbofan Engine Degradation Dataset.
+
+Loads space-delimited train, test, and RUL files for sub-datasets
+FD001–FD004 and assigns standard column names from ``config.py``.
+
+Classes:
+    CMAPSSDataLoader   — Load train/test/RUL data with quality checks.
+    DatasetVersioner   — Hash-based dataset versioning with rollback.
+
+Functions:
+    load_dataset       — Convenience one-liner to load any sub-dataset.
+
+Usage::
+
+    from data_loader import load_dataset
+    train_df, test_df, rul_df = load_dataset('FD001')
 """
 
 import pandas as pd
