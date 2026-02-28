@@ -1,6 +1,22 @@
 """
-Prediction Script for RUL Estimation
-Makes predictions using trained models
+Prediction Script for RUL Estimation.
+
+Loads trained LSTM, Random Forest, and Linear Regression models, runs
+inference on C-MAPSS test data, generates ensemble predictions with
+uncertainty bounds, and produces maintenance recommendations.
+
+Classes:
+    BatchPredictionManager — Parallel batch inference with progress tracking.
+    PredictionCache        — LRU cache with TTL for repeated predictions.
+
+Functions:
+    predict_rul            — End-to-end inference pipeline with visualizations.
+    load_trained_models    — Load saved models and preprocessor from disk.
+
+Usage::
+
+    python predict.py --dataset FD001
+    python predict.py --dataset FD002 --no-visualize
 """
 
 import numpy as np
