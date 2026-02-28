@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [2.0.1] — 2026-02-27
+## [2.0.1] — 2026-02-28
 
 ### Added
 - **CITATION.cff**: Academic citation file — GitHub shows "Cite this repository" button
@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **README.md**: Quick Start section, table of contents, pre-commit and version badges
 - **conftest.py**: Pytest markers, `small_fleet`, `tmp_model_dir`, `mock_config`, `ALL_FEATURE_COLUMNS`
 - **.pre-commit-config.yaml**: Ruff pre-commit hook with auto-fix
+- **.env.example**: Documented environment variables for docker-compose env_file
 
 ### Changed
 - **.gitignore**: Added patterns for `.mypy_cache/`, `.ruff_cache/`, `build/`, `dist/`, `*.egg-info/`
@@ -40,7 +41,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **evaluator.py**: Expanded module docstring with class list and usage example
 - **feature_engineer.py**: Expanded module docstring with class list and usage example
 - **train.py**: Improved argparse with descriptive help text, epilog with examples
-- **CITATION.cff**: Bumped version to 2.0.1, updated release date
+- **predict.py**: Expanded module docstring with class list and CLI usage examples
+- **preprocessor.py**: Expanded module docstring with class list and usage example
+- **data_loader.py**: Expanded module docstring with class list and usage example
+- **utils.py**: Expanded module docstring with section overview and usage example
+- **api.py**: Expanded module docstring with endpoint summary; bumped version to 2.0.1
+- **CITATION.cff**: Updated release date to 2026-02-28
 - **SECURITY.md**: Added reporting email and private advisory link
 - **CODE_OF_CONDUCT.md**: Updated to Contributor Covenant v2.1
 - **CONTRIBUTING.md**: Added `make help` tip, ruff instructions, and First-Time Contributors section
