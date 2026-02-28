@@ -1,7 +1,20 @@
 """
-Federated Learning Simulator for Aircraft Engine RUL Prediction
+Federated Learning Simulator for Aircraft Engine RUL Prediction.
+
 Simulates privacy-preserving distributed training across airline "sites"
-using the Federated Averaging (FedAvg) algorithm.
+using the Federated Averaging (FedAvg) algorithm.  Supports uniform and
+skewed (non-IID) data partitioning with centralized baseline comparison.
+
+Classes:
+    FederatedTrainer  — Multi-round FedAvg orchestrator with privacy analysis.
+    FederatedEnsemble — Weighted prediction ensemble of local site models.
+
+Usage::
+
+    from federated_trainer import FederatedTrainer
+    trainer = FederatedTrainer(n_sites=4, n_rounds=5)
+    trainer.partition_data(train_df)
+    results = trainer.run_rounds(test_df)
 """
 
 import numpy as np
