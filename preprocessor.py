@@ -1,6 +1,19 @@
 """
-Data Preprocessor for NASA C-MAPSS Dataset
-Handles RUL label creation, normalization, and train/val splitting
+Data Preprocessor for NASA C-MAPSS Dataset.
+
+Handles RUL label creation, feature normalization (MinMax / Standard),
+train-validation splitting by engine unit, and pipeline validation.
+
+Classes:
+    CMAPSSPreprocessor      — RUL labels, normalization, scaler save/load.
+    DataPipelineValidator   — Leakage checks, RUL validation, scaling QA.
+    DataAugmentor           — Noise injection, time warping, oversampling.
+
+Usage::
+
+    from preprocessor import preprocess_data
+    result = preprocess_data(train_df, test_df, rul_df)
+    train_norm = result['train']
 """
 
 import pandas as pd
