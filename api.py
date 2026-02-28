@@ -47,7 +47,7 @@ logger = setup_logging(__name__)
 app = FastAPI(
     title="Aircraft Engine RUL Prediction API",
     description="Predict Remaining Useful Life (RUL) of turbofan engines using deep learning",
-    version="1.0.0",
+    version="2.0.1",
     docs_url="/docs",
     redoc_url="/redoc"
 )
@@ -198,7 +198,7 @@ async def root():
     """Root endpoint with API information"""
     return {
         "message": "Aircraft Engine RUL Prediction API",
-        "version": "1.0.0",
+        "version": "2.0.1",
         "documentation": "/docs",
         "health_check": "/health"
     }
@@ -214,7 +214,7 @@ async def health_check():
         status="healthy" if models_loaded else "degraded",
         models_loaded=models_loaded,
         available_models=available_models,
-        version="1.0.0"
+        version="2.0.1"
     )
 
 
@@ -341,7 +341,7 @@ async def predict_rul(request: PredictionRequest):
         return PredictionResponse(
             predictions=predictions,
             timestamp=datetime.now().isoformat(),
-            model_version="1.0.0"
+            model_version="2.0.1"
         )
         
     except HTTPException:
