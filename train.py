@@ -9,12 +9,13 @@ import sys
 import os
 import argparse
 from datetime import datetime
+from typing import Dict, List
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import config
-from utils import setup_logging, generate_sequences, save_model, save_scaler, save_results
+from utils import setup_logging, generate_sequences, save_results
 from data_loader import load_dataset
 from preprocessor import preprocess_data
 from feature_engineer import engineer_features
@@ -150,7 +151,7 @@ def main(dataset_name='FD001', skip_baseline=False, skip_lstm=False, skip_anomal
         skip_anomaly: Skip anomaly detector training
     """
     logger.info("="*80)
-    logger.info(f"AIRCRAFT ENGINE RUL PREDICTION - TRAINING PIPELINE")
+    logger.info("AIRCRAFT ENGINE RUL PREDICTION - TRAINING PIPELINE")
     logger.info(f"Dataset: {dataset_name}")
     logger.info(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("="*80)
@@ -171,7 +172,7 @@ def main(dataset_name='FD001', skip_baseline=False, skip_lstm=False, skip_anomal
     logger.info("\n[Step 3/7] Engineering features...")
     train_eng = engineer_features(train_prep)['train']
     val_eng = engineer_features(val_prep)['train']
-    test_eng = engineer_features(test_prep)['train']
+    _ = engineer_features(test_prep)['train']
     
     # Get feature columns
     feature_cols = preprocessed['feature_columns']
@@ -243,7 +244,7 @@ def main(dataset_name='FD001', skip_baseline=False, skip_lstm=False, skip_anomal
         X_healthy = train_eng[healthy_mask][feature_cols].values
         
         logger.info(f"Training on {len(X_healthy)} healthy samples")
-        anomaly_results = train_anomaly_detector(X_healthy, feature_cols)
+        _ = train_anomaly_detector(X_healthy, feature_cols)
     else:
         logger.info("\n[Step 6/7] Skipping anomaly detector...")
     
@@ -741,9 +742,6 @@ class PipelineOrchestrator:
         ])
         
         return '\n'.join(lines)
-
-
-        return execution_report
 
 
 class DistributedTrainer:

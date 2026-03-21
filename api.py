@@ -728,9 +728,8 @@ class HealthCheckMonitor:
     
     def check_model_readiness(self) -> dict:
         """Check if models are loaded and ready"""
-        global models
         
-        loaded_models = list(models.keys()) if models else []
+        loaded_models = list(models.keys()) if 'models' in globals() and models else []
         
         return {
             'status': 'ready' if loaded_models else 'not_ready',
