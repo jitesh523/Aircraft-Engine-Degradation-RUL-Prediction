@@ -37,7 +37,7 @@ tf2onnx>=1.16.0
 
 # ─── Streaming & Infrastructure ─────────────────────────────
 redis>=5.0.0
-psutil>=5.9.0
+psutil>=7.2.2
 
 # ─── Statistical & Domain-Specific ──────────────────────────
 statsmodels>=0.14.0
