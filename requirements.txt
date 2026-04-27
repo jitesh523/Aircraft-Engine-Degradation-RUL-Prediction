@@ -21,7 +21,7 @@ plotly>=5.18.0
 # ─── Web Framework & API ────────────────────────────────────
 streamlit>=1.29.0
 fastapi>=0.104.0
-uvicorn>=0.24.0
+uvicorn>=0.39.0
 pydantic>=2.5.0
 
 # ─── MLOps & Experiment Tracking ────────────────────────────
