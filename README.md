@@ -183,6 +183,9 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+
+# (Optional) Configure environment variables
+cp .env.example .env
 ```
 
 ### Key Dependencies
@@ -209,6 +212,7 @@ pip install -r requirements.txt
 ```
 Aircraft-Engine-Degradation-RUL-Prediction/
 │
+├── .env.example                 # Example environment variables template
 ├── config.py                    # Configuration, hyperparameters, thresholds
 ├── utils.py                     # Utility functions, logging, scoring
 ├── data_loader.py               # NASA C-MAPSS dataset parser
