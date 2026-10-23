@@ -274,9 +274,11 @@ class DatasetVersioner:
         """
         import os
         from datetime import datetime
+        from uuid import uuid4
         
         data_hash = self._compute_hash(df)
-        version_id = f"v_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Snapshots created in the same second must not overwrite earlier data.
+        version_id = f"v_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid4().hex}"
         
         version_info = {
             'version_id': version_id,
